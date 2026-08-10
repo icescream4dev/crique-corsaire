@@ -1,5 +1,5 @@
 // ============================================================
-// PIXI RENDERER — Caméra simple : pan, zoom curseur, pinch centre.
+// PIXI RENDERER — Caméra : pan, zoom curseur, pinch vers midpoint.
 // ============================================================
 
 import { Application, Container, Graphics } from 'pixi.js';
@@ -27,8 +27,6 @@ export class PixiRenderer implements IRenderer {
   private zoom = 1;
   private worldW = 0;
   private worldH = 0;
-  private sw = 0;
-  private sh = 0;
 
   private dragging = false;
   private dsx = 0; private dsy = 0;
@@ -49,31 +47,38 @@ export class PixiRenderer implements IRenderer {
       roundPixels: true,
     });
     container.appendChild(this.app.canvas);
-
     this.worldContainer = new Container();
     this.tileLayer = new Container();
     this.buildingLayer = new Container();
     this.worldContainer.addChild(this.tileLayer, this.buildingLayer);
     this.app.stage.addChild(this.worldContainer);
-
     this.setupCamera();
   }
 
-  /** Coordonnée X relative au canvas. */
-  private cx(clientX: number): number { return clientX - this.app.canvas.getBoundingClientRect().left; }
-  private cy(clientY: number): number { return clientY - this.app.canvas.getBoundingClientRect().top; }
+  // Coordonnées relatives au canvas
+  private mx(clientX: number): number { return clientX - this.app.canvas.getBoundingClientRect().left; }
+  private my(clientY: number): number { return clientY - this.app.canvas.getBoundingClientRect().top; }
+  private get sw(): number { return this.app.screen.width; }
+  private get sh(): number { return this.app.screen.height; }
+  private get ww(): number { return this.worldW * TILE_SIZE * this.zoom; }
+  private get wh(): number { return this.worldH * TILE_SIZE * this.zoom; }
 
-  /** Empêche l'île de sortir entièrement de l'écran. */
+  /** Le centre de l'île ne sort pas de [10%, 90%] de l'écran. */
   private clamp(): void {
-    const ww = this.worldW * TILE_SIZE * this.zoom;
-    const wh = this.worldH * TILE_SIZE * this.zoom;
-    // Au moins 50px de l'île visibles
-    const pad = 50;
-    this.camX = Math.max(-ww + pad, Math.min(this.sw - pad, this.camX));
-    this.camY = Math.max(-wh + pad, Math.min(this.sh - pad, this.camY));
+    const cx = this.camX + this.ww / 2; // centre île en screenX
+    const cy = this.camY + this.wh / 2;
+    const minCX = this.sw * 0.1;
+    const maxCX = this.sw * 0.9;
+    const minCY = this.sh * 0.1;
+    const maxCY = this.sh * 0.9;
+    if (cx < minCX) this.camX += minCX - cx;
+    if (cx > maxCX) this.camX += maxCX - cx;
+    if (cy < minCY) this.camY += minCY - cy;
+    if (cy > maxCY) this.camY += maxCY - cy;
   }
 
-  private doZoom(cx: number, cy: number, newZoom: number): void {
+  /** Zoom vers un point canvas. */
+  private zoomAt(cx: number, cy: number, newZoom: number): void {
     newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
     const wx = (cx - this.camX) / this.zoom;
     const wy = (cy - this.camY) / this.zoom;
@@ -85,14 +90,14 @@ export class PixiRenderer implements IRenderer {
   private setupCamera(): void {
     const c = this.app.canvas;
 
-    // Molette → zoom vers le curseur
+    // Molette → zoom curseur
     c.addEventListener('wheel', (e: WheelEvent) => {
       e.preventDefault();
       const dir = e.deltaY > 0 ? -1 : 1;
-      this.doZoom(this.cx(e.clientX), this.cy(e.clientY), this.zoom + dir * ZOOM_STEP);
+      this.zoomAt(this.mx(e.clientX), this.my(e.clientY), this.zoom + dir * ZOOM_STEP);
     }, { passive: false });
 
-    // Drag souris
+    // Drag souris (÷2)
     c.addEventListener('mousedown', (e: MouseEvent) => {
       this.dragging = true;
       this.dsx = e.clientX; this.dsy = e.clientY;
@@ -106,7 +111,7 @@ export class PixiRenderer implements IRenderer {
       this.clamp();
     });
 
-    // Touch
+    // Touch drag (÷2) + pinch → zoom vers midpoint
     c.addEventListener('touchstart', (e: TouchEvent) => {
       if (e.touches.length === 1) {
         this.dragging = true;
@@ -126,10 +131,14 @@ export class PixiRenderer implements IRenderer {
         this.camY = this.dcy + (e.touches[0].clientY - this.dsy) / 2;
         this.clamp();
       } else if (e.touches.length === 2) {
+        const midCX = this.mx((e.touches[0].clientX + e.touches[1].clientX) / 2);
+        const midCY = this.my((e.touches[0].clientY + e.touches[1].clientY) / 2);
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         const newZ = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.pinchStartZoom * (dist / this.pinchStartDist)));
-        // Zoom simple depuis le centre de l'écran
-        this.doZoom(this.sw / 2, this.sh / 2, newZ);
+        this.zoomAt(midCX, midCY, newZ);
+        // Mettre à jour pinchStart pour le prochain move (zoom continu)
+        this.pinchStartZoom = this.zoom;
+        this.pinchStartDist = dist;
       }
     }, { passive: false });
 
@@ -138,8 +147,6 @@ export class PixiRenderer implements IRenderer {
   }
 
   update(_dt: number): void {
-    this.sw = this.app.screen.width;
-    this.sh = this.app.screen.height;
     this.worldContainer.scale.set(this.zoom);
     this.worldContainer.x = this.camX;
     this.worldContainer.y = this.camY;
@@ -147,7 +154,6 @@ export class PixiRenderer implements IRenderer {
 
   centerOnWorld(worldW: number, worldH: number): void {
     this.worldW = worldW; this.worldH = worldH;
-    this.sw = this.app.screen.width; this.sh = this.app.screen.height;
     const ww = worldW * TILE_SIZE;
     const wh = worldH * TILE_SIZE;
     this.zoom = Math.min(1, this.sw / ww, this.sh / wh);
@@ -184,7 +190,6 @@ export class PixiRenderer implements IRenderer {
   clear(): void { this.tileGraphics = []; this.tileLayer.removeChildren(); this.buildingLayer.removeChildren(); }
   onResize(): void { this.update(0); }
   getTileAt(sx: number, sy: number): { x: number; y: number } | null {
-    const x = this.cx(sx); const y = this.cy(sy);
-    return { x: Math.floor((x - this.camX) / this.zoom / TILE_SIZE), y: Math.floor((y - this.camY) / this.zoom / TILE_SIZE) };
+    return { x: Math.floor((this.mx(sx) - this.camX) / this.zoom / TILE_SIZE), y: Math.floor((this.my(sy) - this.camY) / this.zoom / TILE_SIZE) };
   }
 }
