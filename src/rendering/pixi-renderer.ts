@@ -2,7 +2,7 @@ import { Application, Container, Graphics } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
-const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 3.0;
+const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 6.0;
 const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
 
 export class PixiRenderer implements IRenderer {
