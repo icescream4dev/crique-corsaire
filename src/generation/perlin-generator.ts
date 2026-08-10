@@ -64,8 +64,8 @@ export class SimpleIslandGenerator implements IWorldGenerator {
         const el=fb(x*.06,y*.06,seed+999,5);
         if(d<=2&&el<.35)T[y][x].terrain='sand';
       }
-      // Montagne : les 25% les plus hauts
-      const topPct=Math.max(1,Math.floor(il.length*.25));
+      // Montagne : les 55% les plus hauts
+      const topPct=Math.max(1,Math.floor(il.length*.55));
       const elevs=il.map(([x,y])=>({x,y,el:fb(x*.06,y*.06,seed+999,5)}));
       elevs.sort((a,b)=>b.el-a.el);
       for(let i=0;i<topPct;i++){
@@ -80,7 +80,7 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     for(let p=0;p<5;p++)for(let y=0;y<H;y++)for(let x=0;x<W;x++){if(!land[y][x]||coastDist[y][x]===1)continue;let m=coastDist[y][x];for(const[dx,dy]of[[-1,0],[1,0],[0,-1],[0,1]]){const nx=x+dx,ny=y+dy;if(nx>=0&&nx<W&&ny>=0&&ny<H&&coastDist[ny][nx]+1<m)m=coastDist[ny][nx]+1}coastDist[y][x]=m}
     let sandC=0,mntC=0,landC=0;
     for(let y=0;y<H;y++)for(let x=0;x<W;x++){if(!land[y][x])continue;landC++;if(T[y][x].terrain==='sand')sandC++;if(T[y][x].terrain==='mountain')mntC++;}
-    const sandTgt=Math.floor(landC*.30),mntTgt=Math.floor(landC*.20);
+    const sandTgt=Math.floor(landC*.20),mntTgt=Math.floor(landC*.50);
     // Ajouter du sable si besoin
     if(sandC<sandTgt){const coastal:([number,number,number])[]=[];for(const il of islands)for(const[x,y]of il)if(T[y][x].terrain==='palm')coastal.push([x,y,coastDist[y][x]]);coastal.sort((a,b)=>a[2]-b[2]);for(const[x,y]of coastal){if(sandC>=sandTgt)break;T[y][x].terrain='sand';sandC++;}}
     // Ajuster montagne
