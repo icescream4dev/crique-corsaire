@@ -77,10 +77,10 @@ export class SimpleIslandGenerator implements IWorldGenerator {
         const height = Math.max(1, Math.floor(el * 5));
         let terrain: TerrainType;
 
-        if (ds <= 3 && el < 0.4) terrain = 'sand';
-        else if (ds <= 2 && el > 0.65) terrain = 'cliff_face';
-        else if (el < 0.5) terrain = 'grass';
-        else if (el < 0.75) terrain = 'rock';
+        if (ds <= 2 && el < 0.35) terrain = 'sand';
+        else if (ds <= 3 && el > 0.55) terrain = ds <= 2 ? 'cliff_face' : 'cliff';
+        else if (el < 0.45) terrain = 'grass';
+        else if (el < 0.7) terrain = 'rock';
         else terrain = 'cliff';
 
         tiles[y][x] = { x, y, terrain, height, stack: [], building: undefined };
@@ -167,9 +167,7 @@ export class SimpleIslandGenerator implements IWorldGenerator {
           const nd = Math.sqrt((lx / s.rx) ** 2 + (ly / s.ry) ** 2);
           const angle = Math.atan2(ly, lx);
           const coastN = fbm(x * 0.8 + Math.cos(angle) * 3, y * 0.8 + Math.sin(angle) * 3, seed + si + attempt * 100, 3) * s.coastAmp;
-          // Bruit HF pour casser les lignes droites (>3 cases)
-          const hfN = noise(x * 4.5, y * 4.5, seed + si * 17) * 0.12;
-          if (nd - coastN - hfN < bestD) bestD = nd - coastN - hfN;
+          if (nd - coastN < bestD) bestD = nd - coastN;
         }
 
         isLand[y][x] = bestD < 0.9;
