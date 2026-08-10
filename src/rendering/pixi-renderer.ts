@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
@@ -10,6 +10,7 @@ export class PixiRenderer implements IRenderer {
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
+  private portReady = false;
 
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
@@ -19,6 +20,8 @@ export class PixiRenderer implements IRenderer {
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
     this.world.addChild(this.tiles, this.blds); this.app.stage.addChild(this.world);
     this.setupEvents();
+    // Précharger le sprite via Assets
+    Assets.load('/ponton-pirate.png').then(() => { this.portReady = true; }).catch(() => {});
   }
 
   private get rect() { return this.ct.getBoundingClientRect(); }
@@ -95,7 +98,7 @@ export class PixiRenderer implements IRenderer {
     }
     this.blds.addChild(g);
     // Sprite scenario.com en surcouche
-    if(b.defId==='port'){
+    if(b.defId==='port' && this.portReady){
       const s=Sprite.from('/ponton-pirate.png');
       s.x=bx*TS-TS*3; s.y=by*TS-TS*4; s.scale.set(0.25);
       this.blds.addChild(s);
