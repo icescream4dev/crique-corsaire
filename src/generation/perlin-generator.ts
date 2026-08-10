@@ -1,5 +1,5 @@
 // ============================================================
-// GÉNÉRATEUR PROCÉDURAL v4 — Couverture 35-50%, îles adjacentes.
+// GÉNÉRATEUR PROCÉDURAL v5 — Côtes irrégulières, terrain équilibré.
 // ============================================================
 
 import type { IWorldGenerator, GenerationParams } from '../core/ports';
@@ -26,10 +26,8 @@ function fbm(x: number, y: number, seed: number, oct: number): number {
 }
 
 interface IslandSeed {
-  cx: number; cy: number;
-  rx: number; ry: number;
-  rot: number;
-  coastAmp: number;
+  cx: number; cy: number; rx: number; ry: number; rot: number;
+  coastAmp: number; hfAmp: number; // amplitudes bruit de côte (basse + haute fréquence)
 }
 
 export class SimpleIslandGenerator implements IWorldGenerator {
@@ -40,52 +38,94 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     const M = 4;
     const totalTiles = (w - M * 2) * (h - M * 2);
 
-    // Boucle de retry pour la couverture
+    // Retry jusqu'à bonne couverture
     let attempt = 0;
-    let bestResult: { tiles: Tile[][]; isLand: boolean[][]; islands: IslandSeed[]; coverage: number } | null = null;
-
+    let best: { tiles: Tile[][]; isLand: boolean[][]; cov: number } | null = null;
     while (attempt < 20) {
       const rng = (i: number) => hash(i, attempt, seed);
       const islands = this.placeIslands(w, h, M, rng);
-      const { tiles: genTiles, isLand: genLand } = this.buildTerrain(w, h, M, islands, seed, attempt);
-      const coverage = this.countLand(genLand, M, w, h) / totalTiles;
-
-      if (coverage >= 0.35 && coverage <= 0.50) {
-        bestResult = { tiles: genTiles, isLand: genLand, islands, coverage };
-        break;
-      }
-      if (!bestResult || Math.abs(coverage - 0.425) < Math.abs(bestResult.coverage - 0.425)) {
-        bestResult = { tiles: genTiles, isLand: genLand, islands, coverage };
-      }
+      const { tiles: t, isLand: il } = this.buildTerrain(w, h, M, islands, seed, attempt);
+      const cov = this.countLand(il, M, w, h) / totalTiles;
+      if (cov >= 0.35 && cov <= 0.50) { best = { tiles: t, isLand: il, cov }; break; }
+      if (!best || Math.abs(cov - 0.425) < Math.abs(best.cov - 0.425)) best = { tiles: t, isLand: il, cov };
       attempt++;
     }
 
-    const { tiles, isLand } = bestResult!;
-
-    // Distance au rivage
+    const { tiles, isLand } = best!;
     const shoreDist = this.computeShoreDist(isLand, w, h);
 
-    // Finaliser les tuiles
+    // Terrain avec bruit haute fréquence pour casser les lignes droites
     const shorePoints: { x: number; y: number }[] = [];
     const cliffFaces: { x: number; y: number; direction: 'n' | 's' | 'e' | 'w' }[] = [];
+
+    // Compteurs pour équilibrage
+    let sandCount = 0, cliffCount = 0, landCount = 0;
 
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         if (!isLand[y][x]) { tiles[y][x] = { x, y, terrain: 'water', height: 0, stack: [], building: undefined }; continue; }
+        landCount++;
+
         const el = fbm(x * 0.06, y * 0.06, seed + 999, 5);
+        // Bruit haute fréquence local pour casser les lignes droites d'élévation
+        const hf = noise(x * 3.0, y * 3.0, seed + 333) * 0.15;
+        const effectiveEl = el + hf;
+
         const ds = shoreDist[y][x];
-        const height = Math.max(1, Math.floor(el * 5));
+        const h = Math.max(1, Math.floor(effectiveEl * 5));
         let terrain: TerrainType;
 
-        if (ds <= 2 && el < 0.35) terrain = 'sand';
-        else if (ds <= 3 && el > 0.55) terrain = ds <= 2 ? 'cliff_face' : 'cliff';
-        else if (el < 0.45) terrain = 'grass';
-        else if (el < 0.7) terrain = 'rock';
-        else terrain = 'cliff';
+        // Plage : proche de l'eau, pas trop pentu (bande élargie)
+        if (ds <= 3 && effectiveEl < 0.4) { terrain = 'sand'; sandCount++; }
+        // Falaise côtière : proche de l'eau, très pentu (réduit)
+        else if (ds <= 2 && effectiveEl > 0.65) { terrain = 'cliff_face'; cliffCount++; }
+        else if (ds <= 3 && effectiveEl > 0.6) { terrain = 'cliff'; cliffCount++; }
+        // Intérieur
+        else if (effectiveEl < 0.5) terrain = 'grass';
+        else if (effectiveEl < 0.72) terrain = 'rock';
+        else { terrain = 'cliff'; cliffCount++; }
 
-        tiles[y][x] = { x, y, terrain, height, stack: [], building: undefined };
-        if (terrain === 'sand') shorePoints.push({ x, y });
-        if (terrain === 'cliff' || terrain === 'cliff_face') {
+        tiles[y][x] = { x, y, terrain, height: h, stack: [], building: undefined };
+      }
+    }
+
+    // Rééquilibrage si trop extrême
+    if (landCount > 0) {
+      const sandRatio = sandCount / landCount;
+      const cliffRatio = cliffCount / landCount;
+
+      // Si < 3% de sable ou > 25% de falaises : régénérer avec un seed modifié
+      if (sandRatio < 0.03 || cliffRatio > 0.25) {
+        // On modifie le seed de "999" (utilisé pour l'élévation) pour changer le terrain
+        // et on refait le terrain avec un biais
+        const altSeed = seed + 12345;
+        sandCount = 0; cliffCount = 0;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            if (!isLand[y][x]) continue;
+            const el = fbm(x * 0.06, y * 0.06, altSeed, 5);
+            const hf2 = noise(x * 3.0, y * 3.0, altSeed + 333) * 0.15;
+            const eel = el + hf2 + (sandRatio < 0.03 ? 0.1 : 0) - (cliffRatio > 0.25 ? 0.1 : 0);
+            const ds = shoreDist[y][x];
+            let terrain: TerrainType;
+            if (ds <= 3 && eel < 0.43) { terrain = 'sand'; sandCount++; }
+            else if (ds <= 2 && eel > 0.65) { terrain = 'cliff_face'; cliffCount++; }
+            else if (ds <= 3 && eel > 0.6) { terrain = 'cliff'; cliffCount++; }
+            else if (eel < 0.5) terrain = 'grass';
+            else if (eel < 0.72) terrain = 'rock';
+            else { terrain = 'cliff'; cliffCount++; }
+            tiles[y][x] = { x, y, terrain, height: Math.max(1, Math.floor(eel * 5)), stack: [], building: undefined };
+          }
+        }
+      }
+    }
+
+    // Finaliser
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const t = tiles[y][x];
+        if (t.terrain === 'sand') shorePoints.push({ x, y });
+        if (t.terrain === 'cliff' || t.terrain === 'cliff_face') {
           cliffFaces.push({ x, y, direction: (['n', 's', 'e', 'w'] as const)[Math.floor(hash(x, y, seed) * 4)] });
         }
       }
@@ -100,64 +140,43 @@ export class SimpleIslandGenerator implements IWorldGenerator {
         resources.push({ x: rx, y: ry, resource: rTypes[i % rTypes.length], amount: Math.floor(hash(i, 2, seed + 777) * 50) + 10 });
       }
     }
-
     return { seed, width: w, height: h, tiles, shorePoints, cliffFaces, resources };
   }
 
-  // --- Placement des îles avec contrainte de proximité ---
   private placeIslands(w: number, h: number, M: number, rng: (i: number) => number): IslandSeed[] {
     const maxR = Math.min(w, h) * 0.22;
     const n = rng(1) < 0.5 ? Math.floor(rng(2) * 4) + 2 : Math.floor(rng(2) * 2) + 1;
     const seeds: IslandSeed[] = [];
-
     for (let i = 0; i < n; i++) {
       const baseR = maxR * (0.3 + rng(i * 5 + 3) * 0.7);
       const aspect = 0.6 + rng(i * 5 + 4) * 0.8;
-
       let cx: number, cy: number;
       if (i === 0) {
-        // Première île : aléatoire dans la zone
         cx = M + maxR + rng(1) * (w - M * 2 - maxR * 2);
         cy = M + maxR + rng(2) * (h - M * 2 - maxR * 2);
       } else {
-        // Îles suivantes : proches d'une île existante (1-3 tuiles d'eau entre)
         const ref = seeds[Math.floor(rng(i * 7) * seeds.length)];
         const angle = rng(i * 7 + 1) * Math.PI * 2;
-        // Distance entre les bords : 1 à 3 tuiles d'eau
-        const gap = 1 + rng(i * 7 + 2) * 2; // 1-3 tuiles
+        const gap = 1 + rng(i * 7 + 2) * 2;
         const dist = ref.rx + baseR + gap;
         cx = ref.cx + Math.cos(angle) * dist;
         cy = ref.cy + Math.sin(angle) * dist;
-        // Clamp dans la zone
         cx = Math.max(M + baseR, Math.min(w - M - baseR, cx));
         cy = Math.max(M + baseR, Math.min(h - M - baseR, cy));
       }
-
-      seeds.push({
-        cx, cy,
-        rx: baseR,
-        ry: baseR * aspect,
-        rot: rng(i * 5 + 5) * Math.PI * 2,
-        coastAmp: 0.35 + rng(i * 5 + 6) * 0.45,
-      });
+      seeds.push({ cx, cy, rx: baseR, ry: baseR * aspect, rot: rng(i * 5 + 5) * Math.PI * 2, coastAmp: 0.35 + rng(i * 5 + 6) * 0.45, hfAmp: 0.3 + rng(i * 5 + 7) * 0.4 });
     }
-
     return seeds;
   }
 
-  // --- Génération du terrain (terre/eau) ---
   private buildTerrain(w: number, h: number, M: number, islands: IslandSeed[], seed: number, attempt: number) {
     const isLand: boolean[][] = [];
     const tiles: Tile[][] = [];
-
     for (let y = 0; y < h; y++) {
       isLand[y] = []; tiles[y] = [];
       for (let x = 0; x < w; x++) {
         tiles[y][x] = { x, y, terrain: 'water', height: 0, stack: [], building: undefined };
-        if (x <= M || x >= w - M - 1 || y <= M || y >= h - M - 1) {
-          isLand[y][x] = false; continue;
-        }
-
+        if (x <= M || x >= w - M - 1 || y <= M || y >= h - M - 1) { isLand[y][x] = false; continue; }
         let bestD = Infinity;
         for (let si = 0; si < islands.length; si++) {
           const s = islands[si];
@@ -166,16 +185,17 @@ export class SimpleIslandGenerator implements IWorldGenerator {
           const lx = dx * cos - dy * sin, ly = dx * sin + dy * cos;
           const nd = Math.sqrt((lx / s.rx) ** 2 + (ly / s.ry) ** 2);
           const angle = Math.atan2(ly, lx);
-          const coastN = fbm(x * 0.8 + Math.cos(angle) * 3, y * 0.8 + Math.sin(angle) * 3, seed + si + attempt * 100, 3) * s.coastAmp;
-          if (nd - coastN < bestD) bestD = nd - coastN;
+          // Bruit basse fréquence (criques) + haute fréquence (casser les lignes droites)
+          const lf = fbm(x * 0.8 + Math.cos(angle) * 3, y * 0.8 + Math.sin(angle) * 3, seed + si + attempt * 100, 3) * s.coastAmp;
+          const hf = noise(x * 4.5 + Math.cos(angle) * 2, y * 4.5 + Math.sin(angle) * 2, seed + si * 7 + 5000) * s.hfAmp * 0.25;
+          const effectiveD = nd - lf - hf;
+          if (effectiveD < bestD) bestD = effectiveD;
         }
-
-        isLand[y][x] = bestD < 0.9;
+        isLand[y][x] = bestD < 0.88;
       }
     }
-
-    // Supprimer les lacs isolés
-    for (let y = M + 1; y < h - M - 1; y++) {
+    // Lacs isolés
+    for (let y = M + 1; y < h - M - 1; y++)
       for (let x = M + 1; x < w - M - 1; x++) {
         if (isLand[y][x]) continue;
         let ln = 0;
@@ -185,34 +205,16 @@ export class SimpleIslandGenerator implements IWorldGenerator {
         }
         if (ln >= 7) isLand[y][x] = true;
       }
-    }
-
     return { tiles, isLand };
   }
 
-  private countLand(isLand: boolean[][], M: number, w: number, h: number): number {
-    let count = 0;
-    for (let y = M; y < h - M; y++)
-      for (let x = M; x < w - M; x++)
-        if (isLand[y][x]) count++;
-    return count;
-  }
-
-  private computeShoreDist(isLand: boolean[][], w: number, h: number): number[][] {
-    const d: number[][] = [];
-    for (let y = 0; y < h; y++) { d[y] = []; for (let x = 0; x < w; x++) d[y][x] = isLand[y][x] ? 999 : 0; }
-    for (let pass = 0; pass < 8; pass++) {
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          if (!isLand[y][x]) continue;
-          let minD = d[y][x];
-          for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-            const nx = x + dx, ny = y + dy;
-            if (nx >= 0 && nx < w && ny >= 0 && ny < h && d[ny][nx] + 1 < minD) minD = d[ny][nx] + 1;
-          }
-          d[y][x] = minD;
-        }
-      }
+  private countLand(il: boolean[][], M: number, w: number, h: number): number { let c = 0; for (let y = M; y < h - M; y++) for (let x = M; x < w - M; x++) if (il[y][x]) c++; return c; }
+  private computeShoreDist(il: boolean[][], w: number, h: number): number[][] {
+    const d: number[][] = []; for (let y = 0; y < h; y++) { d[y] = []; for (let x = 0; x < w; x++) d[y][x] = il[y][x] ? 999 : 0; }
+    for (let p = 0; p < 8; p++) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (!il[y][x]) continue; let minD = d[y][x];
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const nx = x + dx, ny = y + dy; if (nx >= 0 && nx < w && ny >= 0 && ny < h && d[ny][nx] + 1 < minD) minD = d[ny][nx] + 1; }
+      d[y][x] = minD;
     }
     return d;
   }
