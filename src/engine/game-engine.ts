@@ -51,10 +51,12 @@ export class GameEngine {
 
     await this.renderer.init(container);
 
-    // Centrer après un frame pour avoir les bonnes dimensions
+    // Double rAF pour garantir que le layout est fait
     requestAnimationFrame(() => {
-      this.renderer.centerOnWorld(this.state.island.width, this.state.island.height);
-      this.buildWorld();
+      requestAnimationFrame(() => {
+        this.renderer.centerOnWorld(this.state.island.width, this.state.island.height);
+        this.buildWorld();
+      });
     });
 
     this.running = true;
