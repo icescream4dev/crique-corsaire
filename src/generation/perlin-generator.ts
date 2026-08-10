@@ -6,7 +6,8 @@ import type { IWorldGenerator, GenerationParams } from '../core/ports';
 import type { IslandData, Tile, TerrainType } from '../core/types';
 
 function h(x: number, y: number, seed: number): number {
-  return Math.sin(x * 127.1 + y * 311.7 + seed * 73.19) * 43758.5453 % 1;
+  const n = Math.sin(x * 127.1 + y * 311.7 + seed * 73.19) * 43758.5453;
+  return n - Math.floor(n);
 }
 function n(x: number, y: number, seed: number): number {
   const ix = Math.floor(x), iy = Math.floor(y);
