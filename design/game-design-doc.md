@@ -65,7 +65,8 @@ Tous les bâtiments sont **évolutifs** (arbre d'amélioration 5 niveaux) avec m
 | 🔮 Mystique & Surnaturel | Éleveur de Malédictions, Temple de Poséidon, Attrapeur de Rêves |
 | ⚓ Port & Maritime | Port, Voiturier de Galions, Phare |
 | 🎭 Culture & Divertissement | Chants de Marins, Théâtre de Marionnettes, Zoo Marin, Musée |
-| ⚡ Anachronique | Labo Nemo (électricité/steampunk), Imprimerie, Taxidermie |
+| ⚡ Anachronique | Labo Nemo, Imprimerie, Taxidermie |
+| 💀 Ossements & Vaudou | Ossuaire, Sculpteur de Crânes, Boutique Vaudou, Liseur d'Os, Tisserand de Drapeaux, Catacombes, Apothicaire |
 | 🏚️ Logement | Baraquements (capacité de population) |
 
 ### Chaînes économiques documentées
@@ -73,9 +74,13 @@ Tous les bâtiments sont **évolutifs** (arbre d'amélioration 5 niveaux) avec m
 - **Jambe de Contrebande** : Décorateur de Jambes → marqueterie → nacre → compartiment secret → prothèse suisse
 - **Cure de Jouvence** : Algues → Thermes → Bave d'escargot → Larme de sirène
 - **Rhum Éternel** : Taverne → Tonnellerie → Distillerie → Rhum-carburant (Labo Nemo)
+- **Poupée de Vengeance** : Charcuterie/Zoo → Ossuaire → Boutique Vaudou → Éleveur de Malédictions → Malédiction téléguidée
+- **Crâne Oracle** : Ossuaire → Sculpteur de Crânes → Liseur d'Os → Prophétie
+- **Étendard Légendaire** : Tisserand → Sculpteur de Crânes → Boutique Vaudou
+- **Immortalité Partielle** : Ossuaire → Apothicaire → Zoo Marin
 
 ### Types de pirates
-7 segments de population avec besoins spécifiques : Boucaniers, Flibustiers, Corsaires, Forbans, Marchands, Artistes, Savants Fous.
+10 segments de population avec besoins spécifiques : Boucaniers, Flibustiers, Corsaires, Forbans, Marchands, Artistes, Savants Fous, Mambos, Nécromanciens, Cartographes de l'Au-Delà.
 
 ---
 

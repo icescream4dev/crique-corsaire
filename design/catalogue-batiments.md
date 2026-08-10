@@ -360,7 +360,169 @@ Chaque bâtiment a :
 
 ---
 
-## 🏚️ 8. Logement & Infrastructure
+## 💀 8. Ossements & Vaudou
+
+> Les os et crânes sont l'âme visuelle de la piraterie. Cette filière transforme les restes
+> (animaux, humains, créatures) en objets ésotériques, décorations, et artefacts vaudou.
+
+### Ossuaire "Le Tibia Bavard"
+**Service de base :** Collecte et nettoyage d'os de toutes origines.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Ramassage et tri | `os-brut`, `crane-brut` | `carcasse`, `cadavre` |
+| 2 | Nettoyage au sable et eau de mer | `os-blanchi`, `sable-use` | `os-brut`, `sable-fin`, `eau-de-mer` |
+| 3 | Polissage et classement | `os-poli`, `crane-pret`, `poudre-dos` | `os-blanchi`, `pierre-ponce` |
+| 4 | Identification d'os rares (experts) | `os-legende` (os de capitaine célèbre) | `os-ancien`, `archive` |
+| 5 | Assemblage de squelettes complets | `squelette-monte`, `attraction-morbide` | `os-poli`, `fil-de-fer`, `socle` |
+
+> **Chaîne** : la Charcuterie et le Zoo Marin fournissent des carcasses → Ossuaire. Les pirates morts naturellement (vieillesse, accident de canon) produisent aussi des os.
+
+---
+
+### Sculpteur de Crânes "Le Crâne Enchanteur"
+**Service de base :** Gravure décorative sur crânes.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Crâne gravé simple | `crane-grave` | `crane-pret`, `burin` |
+| 2 | Crâne incrusté de nacre | `crane-nacre` (export luxe) | `crane-grave`, `nacre`, `colle-poisson` |
+| 3 | Crâne doré à l'or fin | `crane-dore`, `poussiere-dor` | `crane-pret`, `or-feuille` |
+| 4 | Crâne luminescent (phosphorescent) | `crane-lumineux` | `crane-pret`, `algues-phosphorescentes` |
+| 5 | Crâne oracle (sculpté pour canaliser les esprits) | `crane-oracle` | `crane-dore`, `rituel-vaudou`, `ame-captive` |
+
+---
+
+### Boutique Vaudou "L'Épingle du Destin"
+**Service de base :** Poupées vaudou basiques et petits fétiches.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Poupée vaudou en chiffon | `poupee-vaudou` | `tissu`, `paille`, `bouton` |
+| 2 | Poupée avec mèche de cheveux (ciblage) | `poupee-ciblee` | `poupee-vaudou`, `cheveux`, `aiguille-os` |
+| 3 | Fétiche de protection (annule une malédiction mineure) | `fettiche-protection` | `os-poli`, `plume`, `liane` |
+| 4 | Poupée de vengeance (effet garanti sous 30 jours) | `poupee-vengeance`, `rancune-consommee` | `poupee-ciblee`, `poudre-dos`, `mauvais-oeil` |
+| 5 | Totem d'île (protège toute la colonie d'une catastrophe) | `totem-protecteur` | `fettiche-collection`, `crane-oracle`, `sacrifice` |
+
+> **Synergie** : `poupee-vengeance` + Éleveur de Malédictions niv 3 = `malediction-teleguidee` (malédiction envoyée à distance sur une île rivale)
+
+---
+
+### Liseur d'Os "Oracle des Ossements"
+**Service de base :** Divination par lancer d'osselets.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Tirage simple (3 osselets) | `prediction-floue` | `osselets` |
+| 2 | Tirage à 7 os | `prediction-moyenne` | `os-poli`, `encens` |
+| 3 | Lecture de crâne (un esprit parle à travers) | `prophetie`, `quete` | `crane-oracle`, `transe` |
+| 4 | Consultation des ancêtres | `sagesse-ancestrale`, `conseil` | `os-legende`, `rituel` |
+| 5 | Vision du futur (2 tours d'avance) | `vision`, `avertissement` | `sacrifice`, `totem` |
+
+---
+
+### Tisserand de Drapeaux "La Tête de Mort"
+**Service de base :** Confection de pavillons pirates (Jolly Roger).
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Drapeau noir simple (tête de mort peinte) | `drapeau-basique` | `tissu-noir`, `peinture-blanche` |
+| 2 | Drapeau personnalisé (armoiries du client) | `drapeau-personnalise`, `fierte` | `tissu`, `teinture`, `histoire-client` |
+| 3 | Drapeau en soie noire (prestige) | `drapeau-luxe` | `soie-noire`, `fil-dore` |
+| 4 | Drapeau hanté (le crâne bouge tout seul) | `drapeau-hante`, `terreur` | `crane-lumineux`, `ame-captive` |
+| 5 | Étendard légendaire (effet d'intimidation sur les flottes ennemies) | `etendard-legende` | `drapeau-hante`, `totem-protecteur`, `eclat-ame` |
+
+---
+
+### Catacombes "Le Dédale du Repos"
+**Service de base :** Stockage souterrain des ossements. Doit être creusé dans la falaise.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Galerie simple (200 places) | `repos-eternel`, `espace-stockage` | `pioche`, `torche` |
+| 2 | Niche décorée | `sepulture`, `respect-defunt` | `os-poli`, `bougie` |
+| 3 | Crypte familiale | `dynastie`, `lignee` | `pierre-tombale`, `crane-sculpte` |
+| 4 | Reliquaire (expose les os de légende) | `relique-os`, `peleringe` | `os-legende`, `vitrine` |
+| 5 | Nécropole hantée (les fantômes font visiter) | `tourisme-macabre`, `ectoplasme` | `crane-oracle`, `ame-captive` |
+
+> **Prérequis** : falaise creusable sur l'île. Plus efficace en profondeur.
+
+---
+
+### Apothicaire "Le Mortier du Pendu"
+**Service de base :** Préparation de remèdes et poisons à base d'os pilés.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Onguent au collagène (accélère la guérison) | `onguent-guerison` | `poudre-dos`, `graisse` |
+| 2 | Philtre de robustesse (temporaire) | `philtre-force`, `pirate-boost` | `poudre-dos`, `rhum`, `algues` |
+| 3 | Poison lent (insoupçonnable) | `poison-subtil` | `poudre-dos-calcinee`, `venin`, `plante` |
+| 4 | Élixir de résurrection mineure | `resurrection-animale`, `familier` | `poudre-dos-pur`, `larme-sirene`, `pierre-lune` |
+| 5 | Décoction d'immortalité partielle (le pirate ne meurt plus, mais pue la mort) | `immortalite-partielle` | `os-legende`, `sang-kraken`, `essence-vitale` |
+
+---
+
+## 🔗 Chaînes Vaudou & Ossements
+
+### Chaîne de la Poupée de Vengeance
+
+```
+Charcuterie / Zoo Marin → carcasse
+    ↓
+Ossuaire niv 1-3 → os-poli + poudre-dos
+    ↓
+Boutique Vaudou niv 1-2 → poupée-ciblée
+    ↓
+Boutique Vaudou niv 4 → POUPÉE DE VENGEANCE
+    ↓
++ Éleveur de Malédictions niv 3 → MALÉDICTION TÉLÉGUIDÉE (exportable)
+```
+
+### Chaîne du Crâne Oracle
+
+```
+Ossuaire niv 1-3 → crane-pret
+    ↓
+Sculpteur de Crânes niv 1-4 → crane-dore / crane-lumineux
+    ↓
+Sculpteur de Crânes niv 5 → CRÂNE ORACLE
+    ↓
+Liseur d'Os niv 3-5 → PROPHÉTIE, VISION
+```
+
+### Chaîne de l'Étendard Légendaire
+
+```
+Tisserand niv 1-3 → drapeau-luxe
+    ↓
+Tisserand niv 4 + Sculpteur de Crânes niv 4 → drapeau-hanté (crane-lumineux + ame-captive)
+    ↓
+Tisserand niv 5 + Boutique Vaudou niv 5 → ÉTENDARD LÉGENDAIRE
+```
+
+### Chaîne de l'Immortalité Partielle
+
+```
+Ossuaire niv 4 → os-legende
+    ↓
+Apothicaire niv 1-4 → poudre-dos-pur + larme-sirene
+    ↓
+Apothicaire niv 5 + Zoo Marin niv 5 → IMMORTALITÉ PARTIELLE
+```
+
+---
+
+## 📊 Nouveaux types de pirates
+
+| Type | Attiré par | Produit | Consomme |
+|---|---|---|---|
+| **Mambo / Houngan** 🪬 | Boutique Vaudou, Liseur d'Os, Apothicaire | `rituel`, `malediction`, `vision` | `poudre-dos`, `poupees`, `plantes-rares` |
+| **Nécromancien** 🦴 | Ossuaire, Catacombes, Sculpteur de Crânes | `squelette-anime`, `ectoplasme` | `os-rares`, `crane-oracle`, `essence-vitale` |
+| **Cartographe de l'Au-Delà** 👻 | Liseur d'Os, Catacombes niv 5, Tisserand | `carte-spirituelle`, `coordonnees-fantomes` | `crane-oracle`, `transe`, `bougie-noire` |
+
+---
+
+## 🏚️ 9. Logement & Infrastructure
 
 ### Baraquements "La Planque du Matelot"
 **Service de base :** Logement collectif sommaire.
@@ -388,7 +550,7 @@ Chaque bâtiment a :
 
 ---
 
-## 🔗 9. Chaînes Économiques Clés
+## 🔗 10. Chaînes Économiques Clés
 
 ### Chaîne du Crochet de Luxe
 
@@ -457,6 +619,9 @@ Chaque type de pirate est attiré par des services spécifiques et génère des 
 | **Marchand** ⚖️ | Port, Imprimerie | `commerce`, `pierres` | `securite`, `routes` |
 | **Artiste** 🎨 | Théâtre, Compositeur | `culture`, `beaute` | `materiaux-art`, `public` |
 | **Savant Fou** 🔬 | Labo Nemo, Taxidermie | `invention`, `decouverte` | `electricite`, `specimens` |
+| **Mambo / Houngan** 🪬 | Boutique Vaudou, Liseur d'Os | `rituel`, `vision` | `os-poli`, `poupees` |
+| **Nécromancien** 🦴 | Ossuaire, Catacombes | `squelette-anime`, `ectoplasme` | `os-legende`, `crane-oracle` |
+| **Cartographe de l'Au-Delà** 👻 | Liseur d'Os, Tisserand | `carte-spirituelle` | `transe`, `bougie-noire` |
 
 ---
 
