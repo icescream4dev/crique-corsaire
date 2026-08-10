@@ -33,7 +33,16 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     for(let p=0;p<4;p++){const ch:[number,number][]=[];for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){if(T[y][x].terrain!=='deep_water')continue;for(const[dx,dy]of[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]])if(land[y+dy]?.[x+dx]){ch.push([x,y]);break}}for(const[x,y]of ch)T[y][x].terrain='shallow_water'}
     for(let p=0;p<3;p++){const ch:[number,number,boolean][]=[];for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){let ln=0;for(const[dx,dy]of[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]])if(land[y+dy]?.[x+dx])ln++;if(land[y][x]&&ln<=1)ch.push([x,y,false]);else if(!land[y][x]&&ln>=7)ch.push([x,y,true])}for(const[x,y,v]of ch){land[y][x]=v;T[y][x].terrain=v?'palm':'deep_water'}}
 
-    // 3. Segmenter les îles (flood fill)
+    // 3. Supprimer les eaux enclavées (lacs) : tout doit être relié à l'océan
+    const oceanVis:boolean[][]=Array.from({length:H},()=>Array(W).fill(false));
+    const oceanQ:[number,number][]=[];
+    for(let x=0;x<W;x++){if(!land[0][x]){oceanVis[0][x]=true;oceanQ.push([x,0])}if(!land[H-1][x]){oceanVis[H-1][x]=true;oceanQ.push([x,H-1])}}
+    for(let y=0;y<H;y++){if(!land[y][0]){oceanVis[y][0]=true;oceanQ.push([0,y])}if(!land[y][W-1]){oceanVis[y][W-1]=true;oceanQ.push([W-1,y])}}
+    while(oceanQ.length){const[cx,cy]=oceanQ.pop()!;for(const[dx,dy]of[[-1,0],[1,0],[0,-1],[0,1]]){const nx=cx+dx,ny=cy+dy;if(nx>=0&&nx<W&&ny>=0&&ny<H&&!oceanVis[ny][nx]&&!land[ny][nx]){oceanVis[ny][nx]=true;oceanQ.push([nx,ny])}}}
+    // Tout ce qui est eau mais pas relié à l'océan → devient terre (palm)
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(!land[y][x]&&!oceanVis[y][x]){land[y][x]=true;T[y][x].terrain='palm'}
+
+    // 4. Segmenter les îles (flood fill)
     const vis:boolean[][]=Array.from({length:H},()=>Array(W).fill(false));
     const islands:[number,number][][]=[];
     for(let y=0;y<H;y++)for(let x=0;x<W;x++){if(!land[y][x]||vis[y][x])continue;
@@ -42,7 +51,7 @@ export class SimpleIslandGenerator implements IWorldGenerator {
       islands.push(il);
     }
 
-    // 4. Pour chaque île : supprimer les micro-îles (<3px), assigner terrain aux autres
+    // 5. Pour chaque île : supprimer les micro-îles (<3px), assigner terrain aux autres
     for(const il of islands){
       if(il.length<3){for(const[x,y]of il){land[y][x]=false;T[y][x].terrain='deep_water'}continue}
       // Calculer distance au bord pour chaque tile de cette île
