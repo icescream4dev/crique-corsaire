@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
@@ -22,9 +22,10 @@ export class PixiRenderer implements IRenderer {
     this.setupEvents();
     // Charger le sprite scenario.com
     const img = new Image();
-    img.onload = () => { this.pt = img; };
-    img.onerror = () => { console.warn('sprite not loaded'); };
+    img.onload = () => { this.pt = img; console.log('✅ sprite loaded', img.width, img.height); };
+    img.onerror = (e) => { console.warn('❌ sprite failed', e); this.pt = null; };
     img.src = '/ponton-pirate.png';
+    console.log('🔄 loading sprite from', img.src);
   }
 
   private get rect() { return this.ct.getBoundingClientRect(); }
@@ -102,7 +103,8 @@ export class PixiRenderer implements IRenderer {
     this.blds.addChild(g);
     // Surcouche sprite scenario.com si chargé
     if(b.defId==='port' && this.pt){
-      const s = Sprite.from(this.pt);
+      const tex = Texture.from(this.pt);
+      const s = new Sprite(tex);
       s.x = bx*TS-TS*3; s.y = by*TS-TS*4; s.scale.set(0.25);
       this.blds.addChild(s);
     }
