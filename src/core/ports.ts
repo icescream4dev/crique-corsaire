@@ -9,6 +9,7 @@ import type { IslandData, GameState, BuildingDef, ResourceDef, PirateType, Tile 
 export interface IRenderer {
   init(container: HTMLElement): Promise<void>;
   centerOnWorld(worldW: number, worldH: number): void;
+  update(dt: number): void;
   renderTile(tile: Tile): void;
   renderBuilding(tile: Tile): void;
   renderPirate(pirate: { x: number; y: number; emoji: string }): void;

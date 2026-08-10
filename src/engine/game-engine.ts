@@ -71,14 +71,19 @@ export class GameEngine {
   private loop = (now: number): void => {
     if (!this.running) return;
 
+    const dt = now - (this._lastFrameTime ?? now);
+    this._lastFrameTime = now;
+
     if (now - this.lastTick >= this.TICK_MS) {
       this.lastTick = now;
       this.tick();
     }
 
+    this.renderer.update(dt);
     this.renderFullMap();
     requestAnimationFrame(this.loop);
   };
+  private _lastFrameTime = 0;
 
   private tick(): void {
     this.state.tick++;
