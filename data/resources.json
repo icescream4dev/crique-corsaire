@@ -1,0 +1,12 @@
+[
+  { "id": "pierres", "name": "Pierres précieuses", "description": "Monnaie rare. Peut tout acheter.", "icon": "💎", "category": "luxury" },
+  { "id": "rhum_basique", "name": "Rhum de fond de cale", "description": "Ça pique, mais ça désaltère.", "icon": "🥃", "category": "processed" },
+  { "id": "rhum_epice", "name": "Rhum épicé", "description": "50% de chances de survie.", "icon": "🍹", "category": "processed" },
+  { "id": "bois_flotte", "name": "Bois flotté", "description": "Récupéré sur les plages.", "icon": "🪵", "category": "raw" },
+  { "id": "epices", "name": "Épices", "description": "Importées des îles lointaines.", "icon": "🌶️", "category": "raw" },
+  { "id": "poudre", "name": "Poudre à canon", "description": "Pour les canons et les cocktails.", "icon": "💥", "category": "processed" },
+  { "id": "algues_rares", "name": "Algues rares", "description": "Récoltées dans les récifs profonds.", "icon": "🌿", "category": "raw" },
+  { "id": "fer_raille", "name": "Fer raille", "description": "Vieux clous, chaînes rouillées.", "icon": "⛓️", "category": "raw" },
+  { "id": "pierre", "name": "Pierre", "description": "Pour les fondations.", "icon": "🪨", "category": "raw" },
+  { "id": "sable_fin", "name": "Sable fin", "description": "Idéal pour le polissage d'os.", "icon": "⌛", "category": "raw" }
+]

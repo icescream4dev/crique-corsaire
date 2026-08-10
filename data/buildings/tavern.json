@@ -1,0 +1,28 @@
+{
+  "id": "tavern",
+  "name": "Taverne \"Le Rat Qui Louche\"",
+  "category": "tavern",
+  "description": "Rhum frelaté et racontars de marins.",
+  "emoji": "🍺",
+  "tileWidth": 1,
+  "tileHeight": 1,
+  "maxStackHeight": 3,
+  "levels": [
+    {
+      "level": 1,
+      "displayName": "Rhum de fond de cale",
+      "inputs": {},
+      "outputs": { "rhum_basique": 1 },
+      "buildCost": { "pierres": 3, "bois_flotte": 2 },
+      "buildTime": 10
+    },
+    {
+      "level": 2,
+      "displayName": "Cocktails explosifs",
+      "inputs": { "epices": 1, "poudre": 1 },
+      "outputs": { "rhum_epice": 2 },
+      "buildCost": { "pierres": 8, "bois_flotte": 4 },
+      "buildTime": 30
+    }
+  ]
+}
