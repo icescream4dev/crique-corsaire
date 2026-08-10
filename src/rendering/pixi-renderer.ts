@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
@@ -10,9 +10,11 @@ export class PixiRenderer implements IRenderer {
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
+  private portTexture: any = null;
 
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
+    this.portTexture = await Assets.load('/ponton-pirate.png');
     this.app = new Application();
     await this.app.init({ resizeTo: ct, backgroundColor:0x0a1628, antialias:false, resolution:1, roundPixels:true });
     ct.appendChild(this.app.canvas);
@@ -77,7 +79,7 @@ export class PixiRenderer implements IRenderer {
   renderBuilding(t:Tile){
     if(!t.buildings.length)return; const b=t.buildings[0]; const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
-      const s=Sprite.from('/ponton-pirate.png');
+      const s=new Sprite(this.portTexture);
       s.x=bx-56; s.y=by-50; // centrer le sprite 128x96 → le quai à la tuile
       s.scale.set(1/3); // 128×96 → ~43×32
       this.blds.addChild(s);
