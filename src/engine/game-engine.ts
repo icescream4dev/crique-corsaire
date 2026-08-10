@@ -1,9 +1,6 @@
 // ============================================================
 // GAME ENGINE — Boucle de jeu principale.
-// Orchestre les systèmes : économie, bâtiments, population.
-// Ne connaît ni le rendu ni la persistence.
 // ============================================================
-
 import type { GameState, BuildingDef, BuildingInstance } from '../core/types';
 import { EventBus } from '../core/events';
 import type { IRenderer, ISaveLoad, IWorldGenerator, IDataLoader } from '../core/ports';
@@ -16,12 +13,9 @@ export class GameEngine {
   private dataLoader: IDataLoader;
   readonly events = new EventBus();
   private buildingDefs: BuildingDef[] = [];
-  // TODO: use when economy/population systems are wired
-  // private resourceDefs: ResourceDef[] = [];
-  // private pirateTypes: PirateType[] = [];
   private running = false;
   private lastTick = 0;
-  private readonly TICK_MS = 1000; // 1 seconde = 1 tick de jeu
+  private readonly TICK_MS = 1000;
 
   constructor(
     renderer: IRenderer,
@@ -36,43 +30,41 @@ export class GameEngine {
     this.state = this.createEmptyState();
   }
 
-  // --- Initialisation ---
   async init(container: HTMLElement, seed?: number): Promise<void> {
-    // Charger les définitions (seront utilisées par les systèmes à venir)
     const [loadedBuildings, loadedResources, loadedPirateTypes] = await Promise.all([
       this.dataLoader.loadBuildings(),
       this.dataLoader.loadResources(),
       this.dataLoader.loadPirateTypes(),
     ]);
     this.buildingDefs = loadedBuildings;
-    // TODO: stocker loadedResources et loadedPirateTypes quand les systèmes sont prêts
     void loadedResources;
     void loadedPirateTypes;
 
-    // Essayer de charger une sauvegarde
     const save = await this.persistence.load();
     if (save) {
       this.state = save;
     } else {
-      // Nouvelle partie
       const s = seed ?? Date.now();
       this.state.island = this.generator.generate(s);
-      this.state.gems = 10; // trésor de départ
+      this.state.gems = 10;
     }
 
     await this.renderer.init(container);
-    this.renderer.centerOnWorld(this.state.island.width, this.state.island.height);
-    this.renderFullMap();
+
+    // Centrer après un frame pour avoir les bonnes dimensions
+    requestAnimationFrame(() => {
+      this.renderer.centerOnWorld(this.state.island.width, this.state.island.height);
+      this.buildWorld();
+    });
+
     this.running = true;
     this.loop(performance.now());
   }
 
-  // --- Boucle de jeu ---
   private loop = (now: number): void => {
     if (!this.running) return;
-
-    const dt = now - (this._lastFrameTime ?? now);
-    this._lastFrameTime = now;
+    const dt = now - (this._lastFrame ?? now);
+    this._lastFrame = now;
 
     if (now - this.lastTick >= this.TICK_MS) {
       this.lastTick = now;
@@ -80,19 +72,17 @@ export class GameEngine {
     }
 
     this.renderer.update(dt);
-    this.renderFullMap();
     requestAnimationFrame(this.loop);
   };
-  private _lastFrameTime = 0;
+  private _lastFrame = 0;
 
   private tick(): void {
     this.state.tick++;
-    // TODO: systems — économie, population, bâtiments
     this.events.emit({ type: 'resource:produced', tick: this.state.tick, payload: { tick: this.state.tick } });
   }
 
-  // --- Rendu ---
-  private renderFullMap(): void {
+  /** Construit l'affichage initial (appelé une seule fois). */
+  private buildWorld(): void {
     this.renderer.clear();
     for (const row of this.state.island.tiles) {
       for (const tile of row) {
@@ -102,7 +92,6 @@ export class GameEngine {
     }
   }
 
-  // --- API publique (placeholder) ---
   placeBuilding(defId: string, x: number, y: number): BuildingInstance | null {
     const def = this.buildingDefs.find(d => d.id === defId);
     if (!def) return null;
@@ -121,17 +110,14 @@ export class GameEngine {
     };
     tile.building = instance;
     this.state.buildings.set(instance.id, instance);
+
+    // Redessiner juste cette tuile
+    this.renderer.renderBuilding(tile);
     return instance;
   }
 
-  save(): Promise<void> {
-    return this.persistence.save(this.state);
-  }
-
-  destroy(): void {
-    this.running = false;
-    this.events.clear();
-  }
+  save(): Promise<void> { return this.persistence.save(this.state); }
+  destroy(): void { this.running = false; this.events.clear(); }
 
   private createEmptyState(): GameState {
     return {
