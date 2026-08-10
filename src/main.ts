@@ -16,23 +16,20 @@ async function main() {
   const renderer = new PixiRenderer();
   const engine = new GameEngine(renderer, new IndexedDBStore(), new SimpleIslandGenerator(), new JsonDataLoader());
 
-  await engine.init(container, Date.now());
-
-  // Clic sur le canvas → poser le bâtiment sélectionné
-  const canvas = container.querySelector('canvas');
-  if (canvas) {
-    canvas.addEventListener('click', (e) => {
-      if (!engine.selectedBuilding) return;
-      const tile = renderer.getTileAt(e.clientX, e.clientY);
-      if (tile) {
-        const ok = engine.placeBuilding(engine.selectedBuilding, tile.x, tile.y);
-        if (ok) {
-          document.querySelectorAll('#toolbar button').forEach(b => ((b as HTMLElement).style.outline = 'none'));
-          engine.selectedBuilding = null;
-        }
+  // Clic sur la carte → poser le bâtiment sélectionné
+  container.addEventListener('click', (e) => {
+    if (!engine.selectedBuilding) return;
+    const tile = renderer.getTileAt(e.clientX, e.clientY);
+    if (tile) {
+      const ok = engine.placeBuilding(engine.selectedBuilding, tile.x, tile.y);
+      if (ok) {
+        document.querySelectorAll('#toolbar button').forEach(b => ((b as HTMLElement).style.outline = 'none'));
+        engine.selectedBuilding = null;
       }
-    });
-  }
+    }
+  });
+
+  await engine.init(container, Date.now());
 
   (window as any).gameEngine = engine;
 
