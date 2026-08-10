@@ -80,8 +80,9 @@ export class PixiRenderer implements IRenderer {
     if(!t.buildings.length)return; const b=t.buildings[0]; const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
       const s=new Sprite(this.portTexture);
-      s.x=bx-56; s.y=by-50; // centrer le sprite 128x96 → le quai à la tuile
-      s.scale.set(1/3); // 128×96 → ~43×32
+      s.anchor.set(0.5, 0.7); // ancré au centre-bas (point de contact avec le sol)
+      s.x=bx*TS+TS/2; s.y=by*TS+TS;
+      s.scale.set(0.5); // 64² → 32², adapté au tile 16² isométrique
       this.blds.addChild(s);
     }else{
       const g=new Graphics();
