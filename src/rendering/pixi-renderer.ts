@@ -57,13 +57,13 @@ export class PixiRenderer implements IRenderer {
     c.addEventListener('wheel', e => { e.preventDefault(); this.at(e.offsetX, e.offsetY, this.zm + (e.deltaY>0?-1:1)*ZS); }, {passive:false});
     c.addEventListener('mousedown', e => { this.drag=true; this.dsx=e.clientX; this.dsy=e.clientY; this.dcx=this.cx; this.dcy=this.cy; });
     window.addEventListener('mouseup', () => this.drag=false);
-    window.addEventListener('mousemove', e => { if(!this.drag)return; this.cx=this.dcx+(e.clientX-this.dsx)/2; this.cy=this.dcy+(e.clientY-this.dsy)/2; this.clamp(); });
+    window.addEventListener('mousemove', e => { if(!this.drag)return; this.cx=this.dcx+(e.clientX-this.dsx); this.cy=this.dcy+(e.clientY-this.dsy); this.clamp(); });
     c.addEventListener('touchstart', (e:TouchEvent) => {
       if(e.touches.length===1){ this.drag=true; this.dsx=e.touches[0].clientX; this.dsy=e.touches[0].clientY; this.dcx=this.cx; this.dcy=this.cy; }
       else if(e.touches.length===2){ this.drag=false; this.pd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); this.pz=this.zm; }
     }, {passive:false});
     c.addEventListener('touchmove', (e:TouchEvent) => { e.preventDefault();
-      if(e.touches.length===1&&this.drag){ this.cx=this.dcx+(e.touches[0].clientX-this.dsx)/2; this.cy=this.dcy+(e.touches[0].clientY-this.dsy)/2; this.clamp(); }
+      if(e.touches.length===1&&this.drag){ this.cx=this.dcx+(e.touches[0].clientX-this.dsx); this.cy=this.dcy+(e.touches[0].clientY-this.dsy); this.clamp(); }
       else if(e.touches.length===2){
         const t0=e.touches[0], t1=e.touches[1];
         const mx=(t0.clientX+t1.clientX)/2, my=(t0.clientY+t1.clientY)/2;
