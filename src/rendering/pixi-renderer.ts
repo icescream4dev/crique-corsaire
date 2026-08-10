@@ -1,6 +1,5 @@
 // ============================================================
-// PIXI RENDERER — Adapter PixiJS avec caméra (pan, zoom, pinch).
-// Zoom vers le point de curseur/pinch avec interpolation stable.
+// PIXI RENDERER — Caméra pan, zoom (instantané), pinch.
 // ============================================================
 
 import { Application, Container, Graphics } from 'pixi.js';
@@ -22,17 +21,9 @@ export class PixiRenderer implements IRenderer {
   private tileLayer!: Container;
   private buildingLayer!: Container;
 
-  // Caméra
   private camX = 0;
   private camY = 0;
   private zoom = 1;
-  private targetZoom = 1;
-
-  // Ancrage zoom interpolé
-  private anchorWX = 0;
-  private anchorWY = 0;
-  private anchorSX = 0;
-  private anchorSY = 0;
 
   // Drag
   private dragging = false;
@@ -67,17 +58,22 @@ export class PixiRenderer implements IRenderer {
     this.setupCamera();
   }
 
-  // --- Caméra ---
   private setupCamera(): void {
     const c = this.app.canvas;
 
+    // Zoom molette — instantané vers le curseur
     c.addEventListener('wheel', (e: WheelEvent) => {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 0.92 : 1.08;
-      const newZ = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.targetZoom * factor));
-      this.setZoomAnchor(e.clientX, e.clientY, newZ);
+      const newZ = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.zoom * factor));
+      const wx = (e.clientX - this.camX) / this.zoom;
+      const wy = (e.clientY - this.camY) / this.zoom;
+      this.zoom = newZ;
+      this.camX = e.clientX - wx * this.zoom;
+      this.camY = e.clientY - wy * this.zoom;
     }, { passive: false });
 
+    // Drag souris (divisé par 2)
     c.addEventListener('mousedown', (e: MouseEvent) => {
       this.dragging = true;
       this.dsx = e.clientX; this.dsy = e.clientY;
@@ -86,10 +82,11 @@ export class PixiRenderer implements IRenderer {
     window.addEventListener('mouseup', () => { this.dragging = false; });
     window.addEventListener('mousemove', (e: MouseEvent) => {
       if (!this.dragging) return;
-      this.camX = this.dcx + (e.clientX - this.dsx);
-      this.camY = this.dcy + (e.clientY - this.dsy);
+      this.camX = this.dcx + (e.clientX - this.dsx) / 2;
+      this.camY = this.dcy + (e.clientY - this.dsy) / 2;
     });
 
+    // Touch drag + pinch
     c.addEventListener('touchstart', (e: TouchEvent) => {
       if (e.touches.length === 1) {
         this.dragging = true;
@@ -98,7 +95,7 @@ export class PixiRenderer implements IRenderer {
       } else if (e.touches.length === 2) {
         this.dragging = false;
         this.pinchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        this.pinchStartZoom = this.targetZoom;
+        this.pinchStartZoom = this.zoom;
         this.pinchMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         this.pinchMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       }
@@ -107,14 +104,19 @@ export class PixiRenderer implements IRenderer {
     c.addEventListener('touchmove', (e: TouchEvent) => {
       e.preventDefault();
       if (e.touches.length === 1 && this.dragging) {
-        this.camX = this.dcx + (e.touches[0].clientX - this.dsx);
-        this.camY = this.dcy + (e.touches[0].clientY - this.dsy);
+        this.camX = this.dcx + (e.touches[0].clientX - this.dsx) / 2;
+        this.camY = this.dcy + (e.touches[0].clientY - this.dsy) / 2;
       } else if (e.touches.length === 2) {
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const newZ = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.pinchStartZoom * (dist / this.pinchStartDist)));
-        this.zoomPinch(this.pinchMidX, this.pinchMidY, newZ, midX, midY);
+        // Zoom vers le point de pinch initial
+        const wx = (this.pinchMidX - this.camX) / this.zoom;
+        const wy = (this.pinchMidY - this.camY) / this.zoom;
+        this.zoom = newZ;
+        this.camX = this.pinchMidX - wx * this.zoom + (midX - this.pinchMidX);
+        this.camY = this.pinchMidY - wy * this.zoom + (midY - this.pinchMidY);
       }
     }, { passive: false });
 
@@ -122,36 +124,7 @@ export class PixiRenderer implements IRenderer {
     c.style.touchAction = 'none';
   }
 
-  /** Zoom molette : définit l'ancre pour interpolation stable. */
-  private setZoomAnchor(sx: number, sy: number, newZoom: number): void {
-    this.anchorWX = (sx - this.camX) / this.zoom;
-    this.anchorWY = (sy - this.camY) / this.zoom;
-    this.anchorSX = sx;
-    this.anchorSY = sy;
-    this.targetZoom = newZoom;
-  }
-
-  /** Zoom pinch : instantané, appliqué directement. */
-  private zoomPinch(ax: number, ay: number, newZ: number, midX: number, midY: number): void {
-    const wx = (ax - this.camX) / this.zoom;
-    const wy = (ay - this.camY) / this.zoom;
-    this.targetZoom = newZ;
-    this.zoom = newZ;
-    this.camX = ax - wx * newZ + (midX - ax);
-    this.camY = ay - wy * newZ + (midY - ay);
-  }
-
   update(_dt: number): void {
-    // Interpolation du zoom
-    const prevZoom = this.zoom;
-    this.zoom += (this.targetZoom - this.zoom) * 0.2;
-
-    // Maintenir l'ancre stable pendant l'interpolation
-    if (Math.abs(this.zoom - prevZoom) > 0.0001) {
-      this.camX = this.anchorSX - this.anchorWX * this.zoom;
-      this.camY = this.anchorSY - this.anchorWY * this.zoom;
-    }
-
     this.worldContainer.scale.set(this.zoom);
     this.worldContainer.x = this.camX;
     this.worldContainer.y = this.camY;
@@ -162,10 +135,7 @@ export class PixiRenderer implements IRenderer {
     const sh = this.app.screen.height;
     const ww = worldW * TILE_SIZE;
     const wh = worldH * TILE_SIZE;
-    // Zoom pour que l'île tienne dans l'écran
-    this.targetZoom = Math.min(1, sw / ww, sh / wh);
-    this.zoom = this.targetZoom;
-    // Centrer : le milieu de l'île au milieu de l'écran
+    this.zoom = Math.min(1, sw / ww, sh / wh);
     this.camX = sw / 2 - (ww / 2) * this.zoom;
     this.camY = sh / 2 - (wh / 2) * this.zoom;
   }
