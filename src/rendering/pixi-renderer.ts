@@ -43,6 +43,7 @@ export class PixiRenderer implements IRenderer {
   private get sh(): number { return this.app.screen.height; }
 
   private clamp(): void {
+    if (!this.wW || !this.wH) return;
     const iw = this.wW * TILE_SIZE * this.zoom;
     const ih = this.wH * TILE_SIZE * this.zoom;
     const pad = 30;
@@ -84,7 +85,14 @@ export class PixiRenderer implements IRenderer {
     c.style.touchAction = 'none';
   }
 
-  update(_dt: number): void { this.world.scale.set(this.zoom); this.world.x = this.camX; this.world.y = this.camY; }
+  update(_dt: number): void {
+    this.world.scale.set(this.zoom);
+    this.world.x = this.camX;
+    this.world.y = this.camY;
+    // Debug HUD
+    const hud = document.getElementById('hud');
+    if (hud) hud.textContent = `🏴‍☠️ Crique Corsaire | sw:${this.sw} sh:${this.sh} | cam:${Math.round(this.camX)},${Math.round(this.camY)} | zoom:${this.zoom.toFixed(2)} | w:${this.wW}x${this.wH}`;
+  }
   centerOnWorld(w: number, h: number): void { this.wW = w; this.wH = h; const ww = w * TILE_SIZE, wh = h * TILE_SIZE; this.zoom = Math.min(1, this.sw / ww, this.sh / wh); this.camX = this.sw / 2 - (ww / 2) * this.zoom; this.camY = this.sh / 2 - (wh / 2) * this.zoom; }
 
   renderTile(t: Tile): void { if (!this.cache[t.y]) this.cache[t.y] = []; if (this.cache[t.y][t.x]) return; const g = new Graphics(); g.rect(t.x * TILE_SIZE, t.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); g.fill(TERRAIN[t.terrain] ?? 0x333333); g.stroke({ width: 0.5, color: 0, alpha: 0.1 }); this.tiles.addChild(g); this.cache[t.y][t.x] = g; }
