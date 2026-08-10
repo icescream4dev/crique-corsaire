@@ -14,7 +14,7 @@ export class PixiRenderer implements IRenderer {
 
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
-    this.portTexture = await Assets.load('/ponton-pirate.png');
+    try { this.portTexture = await Assets.load('/ponton-pirate.png'); } catch { /* fallback */ }
     this.app = new Application();
     await this.app.init({ resizeTo: ct, backgroundColor:0x0a1628, antialias:false, resolution:1, roundPixels:true });
     ct.appendChild(this.app.canvas);
@@ -79,11 +79,15 @@ export class PixiRenderer implements IRenderer {
   renderBuilding(t:Tile){
     if(!t.buildings.length)return; const b=t.buildings[0]; const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
-      const s=new Sprite(this.portTexture);
-      s.anchor.set(0.5, 0.7); // ancré au centre-bas (point de contact avec le sol)
-      s.x=bx*TS+TS/2; s.y=by*TS+TS;
-      s.scale.set(0.5); // 64² → 32², adapté au tile 16² isométrique
-      this.blds.addChild(s);
+      if(this.portTexture){
+        const s=new Sprite(this.portTexture);
+        s.anchor.set(0.5, 0.7); s.x=bx*TS+TS/2; s.y=by*TS+TS; s.scale.set(0.5);
+        this.blds.addChild(s);
+      } else {
+        const g=new Graphics();
+        g.rect(bx*TS,by*TS,TS,TS); g.fill(0x8b6914); g.stroke({width:1,color:0});
+        this.blds.addChild(g);
+      }
     }else{
       const g=new Graphics();
       g.rect(bx+1,by+1,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0});
