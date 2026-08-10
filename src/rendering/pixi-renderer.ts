@@ -1,6 +1,9 @@
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Sprite } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
+
+// @ts-ignore — Vite asset import
+import portUrl from '/ponton-pirate.png';
 
 const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 6.0;
 const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
@@ -77,18 +80,9 @@ export class PixiRenderer implements IRenderer {
   renderBuilding(t:Tile){
     if(!t.buildings.length)return; const b=t.buildings[0]; const g=new Graphics(); const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
-      const f=Math.sin(Date.now()*0.003)*0.5;
-      g.circle(bx+8,by+8,10); g.fill({color:0x2980b9, alpha:0.3});
-      g.rect(bx+2,by+2,2,14); g.fill(0x5c3a0a); g.rect(bx+2,by+2,1,14); g.fill(0x7a4f1a);
-      g.rect(bx+12,by+2,2,14); g.fill(0x5c3a0a); g.rect(bx+13,by+2,1,14); g.fill(0x7a4f1a);
-      for(let i=0;i<4;i++){ const py=by+4+i*3; g.rect(bx+4,py,8,2); g.fill(0x8b6914); g.rect(bx+5,py,1,2); g.fill(0x9b7934); g.rect(bx+9,py,1,2); g.fill(0x7b5904); }
-      g.rect(bx+3,by+1,1,2); g.fill(0xa08050); g.rect(bx+12,by+1,1,2); g.fill(0xa08050);
-      g.rect(bx+7.5+f,by-14,1.5,16); g.fill(0x4a3520);
-      const fx=Math.round(f*2); g.rect(bx+8.5+fx,by-14,8+f,6); g.fill(0x111); g.stroke({width:0.8,color:0x444});
-      g.rect(bx+10+fx,by-12,2,2); g.fill(0xeee); g.rect(bx+12+fx,by-12,2,2); g.fill(0xeee);
-      g.rect(bx+10.5+fx,by-11.5,0.8,0.8); g.fill(0x111); g.rect(bx+12.5+fx,by-11.5,0.8,0.8); g.fill(0x111);
-      g.rect(bx+10+fx,by-9,5,0.8); g.fill(0xddd);
-      g.rect(bx+3,by-4,2,3); g.fill(0xd4a017); g.rect(bx+3.3,by-3.5,1.4,2); g.fill(0xffdd44);
+      const s=Sprite.from(portUrl);
+      s.x=bx*TS-TS*3; s.y=by*TS-TS*4; s.scale.set(0.25);
+      this.blds.addChild(s);
     }else{
       g.rect(bx+1,by+1,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0});
       g.rect(bx+1,by+1,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444);
