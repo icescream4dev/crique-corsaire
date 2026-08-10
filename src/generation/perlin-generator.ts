@@ -42,24 +42,33 @@ export class SimpleIslandGenerator implements IWorldGenerator {
 
     // Boucle de retry pour la couverture
     let attempt = 0;
-    let bestResult: { tiles: Tile[][]; isLand: boolean[][]; islands: IslandSeed[]; coverage: number } | null = null;
+    let bestIslands: IslandSeed[] = [];
+    let bestResult: { tiles: Tile[][]; isLand: boolean[][]; coverage: number } | null = null;
 
     while (attempt < 20) {
       const rng = (i: number) => hash(i, attempt, seed);
       const islands = this.placeIslands(w, h, M, rng);
       const { tiles: genTiles, isLand: genLand } = this.buildTerrain(w, h, M, islands, seed, attempt);
       const coverage = this.countLand(genLand, M, w, h) / totalTiles;
-      // Archipels : plus d'eau entre les îles → seuil plus bas
-      const minCov = islands.length > 1 ? 0.25 : 0.35;
 
-      if (coverage >= minCov && coverage <= 0.50) {
-        bestResult = { tiles: genTiles, isLand: genLand, islands, coverage };
+      if (coverage >= 0.35 && coverage <= 0.50) {
+        bestResult = { tiles: genTiles, isLand: genLand, coverage };
+        bestIslands = islands;
         break;
       }
       if (!bestResult || Math.abs(coverage - 0.425) < Math.abs(bestResult.coverage - 0.425)) {
-        bestResult = { tiles: genTiles, isLand: genLand, islands, coverage };
+        bestResult = { tiles: genTiles, isLand: genLand, coverage };
+        bestIslands = islands;
       }
       attempt++;
+    }
+
+    // Si couverture < 35% (archipel), agrandir les îles proportionnellement
+    if (bestResult && bestResult.coverage < 0.35 && bestIslands.length > 1) {
+      const scale = Math.sqrt(0.38 / bestResult.coverage); // viser 38%
+      for (const s of bestIslands) { s.rx *= scale; s.ry *= scale; }
+      const rescaled = this.buildTerrain(w, h, M, bestIslands, seed, 99);
+      bestResult = { tiles: rescaled.tiles, isLand: rescaled.isLand, coverage: this.countLand(rescaled.isLand, M, w, h) / totalTiles };
     }
 
     const { tiles, isLand } = bestResult!;
@@ -122,11 +131,10 @@ export class SimpleIslandGenerator implements IWorldGenerator {
         cx = M + maxR + rng(1) * (w - M * 2 - maxR * 2);
         cy = M + maxR + rng(2) * (h - M * 2 - maxR * 2);
       } else {
-        // Îles suivantes : proches d'une île existante (1-3 tuiles d'eau entre)
+        // Îles suivantes : très proches (1-2 tuiles d'eau max)
         const ref = seeds[Math.floor(rng(i * 7) * seeds.length)];
         const angle = rng(i * 7 + 1) * Math.PI * 2;
-        // Distance entre les bords : 1 à 3 tuiles d'eau
-        const gap = 1 + rng(i * 7 + 2) * 2; // 1-3 tuiles
+        const gap = 1 + rng(i * 7 + 2); // 1-2 tuiles
         const dist = ref.rx + baseR + gap;
         cx = ref.cx + Math.cos(angle) * dist;
         cy = ref.cy + Math.sin(angle) * dist;
