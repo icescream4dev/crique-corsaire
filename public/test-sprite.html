@@ -1,0 +1,13 @@
+<!DOCTYPE html><html><body>
+<div id="test" style="width:200px;height:200px;background:#333"></div>
+<script type="module">
+import { Application, Sprite } from '/node_modules/pixi.js/lib/pixi.mjs';
+const app = new Application();
+await app.init({ resizeTo: document.getElementById('test'), backgroundColor: 0x222222 });
+document.getElementById('test').appendChild(app.canvas);
+const s = Sprite.from('/ponton-pirate.png');
+s.scale.set(0.5);
+app.stage.addChild(s);
+console.log('Sprite added, texture:', s.texture.width, 'x', s.texture.height);
+setTimeout(() => console.log('After 2s texture:', s.texture.width, 'x', s.texture.height), 2000);
+</script></body></html>

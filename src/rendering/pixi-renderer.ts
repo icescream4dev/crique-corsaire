@@ -81,6 +81,7 @@ export class PixiRenderer implements IRenderer {
     if(!t.buildings.length)return; const b=t.buildings[0]; const g=new Graphics(); const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
       const s=Sprite.from(portUrl);
+      console.log('port sprite texture:', s.texture.width, s.texture.height);
       s.x=bx*TS-TS*3; s.y=by*TS-TS*4; s.scale.set(0.25);
       this.blds.addChild(s);
     }else{
