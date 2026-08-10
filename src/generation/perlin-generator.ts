@@ -26,9 +26,21 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     const W = params?.width ?? 80, H = params?.height ?? 50;
     const richness = params?.resourceRichness ?? 0.5;
 
-    // 1. Heightmap complète (FBM 6 octaves = détails naturels)
+    // 1. Heightmap avec fondu vers les bords (pour éviter les continents)
     const hm: number[][] = [];
-    for (let y = 0; y < H; y++) { hm[y] = []; for (let x = 0; x < W; x++) hm[y][x] = fbm(x * 0.04, y * 0.04, seed, 6); }
+    for (let y = 0; y < H; y++) {
+      hm[y] = [];
+      for (let x = 0; x < W; x++) {
+        let height = fbm(x * 0.04, y * 0.04, seed, 6);
+        // Distance au bord le plus proche (normalisée 0-1, 0=centre, 1=bord)
+        const dx = Math.min(x, W - 1 - x) / (W * 0.5);
+        const dy = Math.min(y, H - 1 - y) / (H * 0.5);
+        const edgeFactor = Math.min(dx, dy); // 0 au bord, 1 au centre
+        // Fondu doux : les bords sont tirés vers le bas
+        const fade = edgeFactor < 0.4 ? edgeFactor / 0.4 : 1; // linéaire jusqu'à 40%, puis 1
+        hm[y][x] = height * fade;
+      }
+    }
 
     // 2. Seuil eau/terre — ajuster pour 35-50% de terre
     // On calcule l'histogramme et on choisit le seuil
