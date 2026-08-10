@@ -6,16 +6,9 @@ const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 6.0;
 const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
 
 export class PixiRenderer implements IRenderer {
-  private app!: Application;
-  private world!: Container;
-  private tiles!: Container;
-  private blds!: Container;
-  private cx = 0; private cy = 0; private zm = 1;
-  private ww = 0; private wh = 0;
-  private ct!: HTMLElement;
-  private drag = false;
-  private dsx=0; private dsy=0; private dcx=0; private dcy=0;
-  private pd=0; private pz=1;
+  private app!: Application; private world!: Container; private tiles!: Container; private blds!: Container;
+  private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
+  private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
 
   async init(ct: HTMLElement): Promise<void> {
@@ -25,18 +18,17 @@ export class PixiRenderer implements IRenderer {
     ct.appendChild(this.app.canvas);
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
     this.world.addChild(this.tiles, this.blds); this.app.stage.addChild(this.world);
-    this.setup();
+    this.setupEvents();
   }
 
   private get rect() { return this.ct.getBoundingClientRect(); }
   private get sw() { return this.rect.width; }
   private get sh() { return this.rect.height; }
 
-  private at(cx:number, cy:number, nz:number) {
+  private zoomAt(sx:number, sy:number, nz:number) {
     nz = Math.max(ZMIN, Math.min(ZMAX, nz));
-    const wx = (cx - this.cx) / this.zm, wy = (cy - this.cy) / this.zm;
-    this.zm = nz;
-    this.cx = cx - wx * nz; this.cy = cy - wy * nz;
+    const wx = (sx - this.cx) / this.zm, wy = (sy - this.cy) / this.zm;
+    this.zm = nz; this.cx = sx - wx * nz; this.cy = sy - wy * nz;
   }
 
   private clamp() {
@@ -46,22 +38,21 @@ export class PixiRenderer implements IRenderer {
     this.cy = Math.max(30 - ih, Math.min(this.sh - 30, this.cy));
   }
 
-  private setup() {
+  private setupEvents() {
     const c = this.app.canvas;
-    c.addEventListener('wheel', e => { e.preventDefault(); this.at(e.offsetX, e.offsetY, this.zm + (e.deltaY>0?-1:1)*ZS); }, {passive:false});
+    c.addEventListener('wheel', e => { e.preventDefault(); this.zoomAt(e.offsetX, e.offsetY, this.zm + (e.deltaY>0?-1:1)*ZS); }, {passive:false});
     c.addEventListener('mousedown', e => { this.drag=true; this.dsx=e.clientX; this.dsy=e.clientY; this.dcx=this.cx; this.dcy=this.cy; });
     window.addEventListener('mouseup', () => this.drag=false);
     window.addEventListener('mousemove', e => { if(!this.drag)return; this.cx=this.dcx+(e.clientX-this.dsx); this.cy=this.dcy+(e.clientY-this.dsy); this.clamp(); });
     c.addEventListener('touchstart', (e:TouchEvent) => {
       if(e.touches.length===1){ this.drag=true; this.dsx=e.touches[0].clientX; this.dsy=e.touches[0].clientY; this.dcx=this.cx; this.dcy=this.cy; }
-      else if(e.touches.length===2){ this.drag=false; this.pd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); this.pz=this.zm; }
+      else if(e.touches.length===2){ this.drag=false; this.pd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY); this.pz=this.zm; }
     }, {passive:false});
     c.addEventListener('touchmove', (e:TouchEvent) => { e.preventDefault();
       if(e.touches.length===1&&this.drag){ this.cx=this.dcx+(e.touches[0].clientX-this.dsx); this.cy=this.dcy+(e.touches[0].clientY-this.dsy); this.clamp(); }
       else if(e.touches.length===2){
-        const t0=e.touches[0], t1=e.touches[1], mx=(t0.clientX+t1.clientX)/2, my=(t0.clientY+t1.clientY)/2;
-        const d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
-        this.at(mx-this.rect.left, my-this.rect.top, Math.max(ZMIN, Math.min(ZMAX, this.pz*(d/this.pd))));
+        const t0=e.touches[0],t1=e.touches[1],mx=(t0.clientX+t1.clientX)/2,my=(t0.clientY+t1.clientY)/2,d=Math.hypot(t0.clientX-t1.clientX,t0.clientY-t1.clientY);
+        this.zoomAt(mx-this.rect.left,my-this.rect.top, Math.max(ZMIN,Math.min(ZMAX,this.pz*(d/this.pd))));
         this.pz=this.zm; this.pd=d;
       }
     }, {passive:false});
@@ -76,23 +67,28 @@ export class PixiRenderer implements IRenderer {
   }
 
   centerOnWorld(w:number, h:number) {
-    this.ww=w; this.wh=h;
-    const ww=w*TS, wh=h*TS;
+    this.ww=w; this.wh=h; const ww=w*TS, wh=h*TS;
     this.zm = Math.min(1, this.sw/ww, this.sh/wh);
-    this.cx = this.sw/2 - (ww/2)*this.zm;
-    this.cy = this.sh/2 - (wh/2)*this.zm;
+    this.cx = this.sw/2 - (ww/2)*this.zm; this.cy = this.sh/2 - (wh/2)*this.zm;
   }
 
   renderTile(t:Tile){ if(!this.cache[t.y])this.cache[t.y]=[]; if(this.cache[t.y][t.x])return; const g=new Graphics(); g.rect(t.x*TS,t.y*TS,TS,TS); g.fill(C[t.terrain]??0x333333); g.stroke({width:.5,color:0,alpha:.1}); this.tiles.addChild(g); this.cache[t.y][t.x]=g; }
 
-  renderBuilding(t:Tile){ if(!t.buildings.length)return; const b=t.buildings[0]; const g=new Graphics(); const bx=b.gridX*TS, by=b.gridY*TS;
+  renderBuilding(t:Tile){
+    if(!t.buildings.length)return; const b=t.buildings[0]; const g=new Graphics(); const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
-      g.rect(bx+1,by+6,14,3); g.fill(0x8b6914); g.rect(bx+1,by+10,14,3); g.fill(0x8b6914);
-      g.rect(bx+1,by+14,14,3); g.fill(0x8b6914); g.rect(bx+1,by+2,14,3); g.fill(0x8b6914);
-      g.rect(bx+2,by,2,16); g.fill(0x5c3a0a); g.rect(bx+12,by,2,16); g.fill(0x5c3a0a);
-      g.rect(bx+8,by-10,1,12); g.fill(0x333);
-      g.rect(bx+9,by-10,6,5); g.fill(0x111); g.stroke({width:1,color:0x666});
-      g.rect(bx+10,by-8,2,2); g.fill(0xeee);
+      const f=Math.sin(Date.now()*0.003)*0.5;
+      g.circle(bx+8,by+8,10); g.fill({color:0x2980b9, alpha:0.3});
+      g.rect(bx+2,by+2,2,14); g.fill(0x5c3a0a); g.rect(bx+2,by+2,1,14); g.fill(0x7a4f1a);
+      g.rect(bx+12,by+2,2,14); g.fill(0x5c3a0a); g.rect(bx+13,by+2,1,14); g.fill(0x7a4f1a);
+      for(let i=0;i<4;i++){ const py=by+4+i*3; g.rect(bx+4,py,8,2); g.fill(0x8b6914); g.rect(bx+5,py,1,2); g.fill(0x9b7934); g.rect(bx+9,py,1,2); g.fill(0x7b5904); }
+      g.rect(bx+3,by+1,1,2); g.fill(0xa08050); g.rect(bx+12,by+1,1,2); g.fill(0xa08050);
+      g.rect(bx+7.5+f,by-14,1.5,16); g.fill(0x4a3520);
+      const fx=Math.round(f*2); g.rect(bx+8.5+fx,by-14,8+f,6); g.fill(0x111); g.stroke({width:0.8,color:0x444});
+      g.rect(bx+10+fx,by-12,2,2); g.fill(0xeee); g.rect(bx+12+fx,by-12,2,2); g.fill(0xeee);
+      g.rect(bx+10.5+fx,by-11.5,0.8,0.8); g.fill(0x111); g.rect(bx+12.5+fx,by-11.5,0.8,0.8); g.fill(0x111);
+      g.rect(bx+10+fx,by-9,5,0.8); g.fill(0xddd);
+      g.rect(bx+3,by-4,2,3); g.fill(0xd4a017); g.rect(bx+3.3,by-3.5,1.4,2); g.fill(0xffdd44);
     }else{
       g.rect(bx+1,by+1,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0});
       g.rect(bx+1,by+1,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444);
@@ -102,8 +98,7 @@ export class PixiRenderer implements IRenderer {
 
   getTileAt(sx:number, sy:number): {x:number;y:number}|null {
     const r = this.rect;
-    const wx = (sx - r.left - this.cx) / this.zm;
-    const wy = (sy - r.top - this.cy) / this.zm;
+    const wx = (sx - r.left - this.cx) / this.zm, wy = (sy - r.top - this.cy) / this.zm;
     const tx = Math.floor(wx / TS), ty = Math.floor(wy / TS);
     if (tx < 0 || tx >= this.ww || ty < 0 || ty >= this.wh) return null;
     return { x: tx, y: ty };
