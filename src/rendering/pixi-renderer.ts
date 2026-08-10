@@ -14,13 +14,14 @@ export class PixiRenderer implements IRenderer {
 
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
-    try { this.portTexture = await Assets.load('/ponton-pirate.png'); } catch { /* fallback */ }
     this.app = new Application();
     await this.app.init({ resizeTo: ct, backgroundColor:0x0a1628, antialias:false, resolution:1, roundPixels:true });
     ct.appendChild(this.app.canvas);
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
     this.world.addChild(this.tiles, this.blds); this.app.stage.addChild(this.world);
     this.setupEvents();
+    // Charger le sprite en arrière-plan (non bloquant)
+    Assets.load('/ponton-pirate.png').then(tex => this.portTexture = tex).catch(() => {});
   }
 
   private get rect() { return this.ct.getBoundingClientRect(); }
