@@ -67,6 +67,7 @@ Tous les bâtiments sont **évolutifs** (arbre d'amélioration 5 niveaux) avec m
 | 🎭 Culture & Divertissement | Chants de Marins, Théâtre de Marionnettes, Zoo Marin, Musée |
 | ⚡ Anachronique | Labo Nemo, Imprimerie, Taxidermie |
 | 💀 Ossements & Vaudou | Ossuaire, Sculpteur de Crânes, Boutique Vaudou, Liseur d'Os, Tisserand de Drapeaux, Catacombes, Apothicaire |
+| 🦜 Animaux & Compagnie | Animalerie, École de Dressage, Éleveur de Perroquets, Écurie de Créatures Marines, Chenil des Mers |
 | 🏚️ Logement | Baraquements (capacité de population) |
 
 ### Chaînes économiques documentées
@@ -78,9 +79,12 @@ Tous les bâtiments sont **évolutifs** (arbre d'amélioration 5 niveaux) avec m
 - **Crâne Oracle** : Ossuaire → Sculpteur de Crânes → Liseur d'Os → Prophétie
 - **Étendard Légendaire** : Tisserand → Sculpteur de Crânes → Boutique Vaudou
 - **Immortalité Partielle** : Ossuaire → Apothicaire → Zoo Marin
+- **Perroquet Légendaire** : Animalerie → Dressage → Éleveur → Perroquet immortel
+- **Spectacle Animalier** : Animalerie → Dressage → Théâtre de Marionnettes
+- **Défense par Créatures** : Chenil → Écurie → Ossuaire → Cerbère marin
 
 ### Types de pirates
-10 segments de population avec besoins spécifiques : Boucaniers, Flibustiers, Corsaires, Forbans, Marchands, Artistes, Savants Fous, Mambos, Nécromanciens, Cartographes de l'Au-Delà.
+12 segments de population avec besoins spécifiques.
 
 ---
 

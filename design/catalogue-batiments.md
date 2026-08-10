@@ -522,7 +522,126 @@ Apothicaire niv 5 + Zoo Marin niv 5 → IMMORTALITÉ PARTIELLE
 
 ---
 
-## 🏚️ 9. Logement & Infrastructure
+## 🦜 8b. Animaux & Compagnie
+
+> Un pirate sans animal, c'est un pirate sans âme. Cette filière élève, dresse et fait évoluer
+> des compagnons qui assistent le joueur (et ses pirates) de façons inattendues.
+
+### Animalerie "Le Perchoir du Pendu"
+**Service de base :** Vente d'animaux de compagnie pour pirates.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Rat de cale apprivoisé | `rat-compagnon` | `fromage`, `cage` |
+| 2 | Perroquet basique (répète 3 insultes) | `perroquet-basique`, `graine` | `perchoir`, `fruits-secs` |
+| 3 | Singe chapardeur (vole des petits objets) | `singe-voleur`, `menu-butin` | `banane`, `cage-solide` |
+| 4 | Crabe hermite géant (monture lente) | `crabe-monture` | `coquillage-geant`, `algues` |
+| 5 | Bébé kraken (animal de compagnie de légende) | `bebe-kraken`, `terreur-mignonne` | `oeuf-abyssal`, `viande-fraiche` |
+
+---
+
+### École de Dressage "La Patte Savante"
+**Service de base :** Apprentissage de tours aux animaux.
+
+| Niv | Service (tours appris) | OUT | IN |
+|---|---|---|---|
+| 1 | Tour basique : "Fais le mort" | `animal-dresse-niv1` | `animal-compagnon`, `friandise` |
+| 2 | Tour comique : jonglage avec des noix de coco | `animal-dresse-niv2` | `animal-dresse-niv1`, `noix-coco` |
+| 3 | Tour utilitaire : vol d'objet désigné (singe/perroquet) | `animal-dresse-niv3`, `butin-cible` | `animal-dresse-niv2`, `recompense-or` |
+| 4 | Tour social : **blagues salaces** (le perroquet raconte des histoires de marins, le singe mime) | `animal-dresse-niv4`, `rire-general`, `reputation` | `animal-dresse-niv3`, `recueil-blagues` |
+| 5 | Tour de maître : numéro complet (jonglage, vol, blague, révérence) | `animal-artiste`, `spectacle` | `animal-dresse-niv4`, `costume`, `mise-en-scene` |
+
+---
+
+### Éleveur de Perroquets "Le Bec Enchanteur"
+**Service de base :** Élevage sélectif de perroquets aux talents variés.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Perroquet vert standard | `perroquet-vert` | `graines`, `cage` |
+| 2 | Perroquet espion (répète les conversations entendues) | `perroquet-espion`, `information` | `perroquet-vert`, `entrainement-ecoute` |
+| 3 | Perroquet coursier (livre des messages) | `perroquet-coursier`, `message-livre` | `perroquet-vert`, `tube-message` |
+| 4 | Perroquet bilingue (parle pirate ET poisson) | `perroquet-bilingue`, `diplomatie-animale` | `perroquet-coursier`, `poisson-professeur` |
+| 5 | Perroquet immortel (a survécu à 12 capitaines) | `perroquet-legende`, `sagesse` | `perroquet-bilingue`, `pierre-phoenix` |
+
+---
+
+### Écurie de Créatures Marines "Le Galop des Vagues"
+**Service de base :** Montures aquatiques pour déplacements rapides.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Dauphin de location (30 min) | `dauphin-monture`, `balade-cotiere` | `poisson-frais`, `selle-aquatique` |
+| 2 | Raie manta domestiquée | `raie-monture`, `transport-rapide` | `plancton`, `harnais` |
+| 3 | Hippocampe géant | `hippocampe-monture`, `plongee` | `crevettes`, `bride-dorée` |
+| 4 | Tortue de guerre (carapace blindée) | `tortue-monture`, `defense-mobile` | `algues-geantes`, `armure-tortue` |
+| 5 | Baleine à bosse dressée (transport de flotte) | `baleine-monture`, `croisiere` | `krill-geant`, `cabine-dos-de-baleine` |
+
+---
+
+### Chenil des Mers "Les Crocs Salés"
+**Service de base :** Chiens de garde pour navires et entrepôts.
+
+| Niv | Service | OUT | IN |
+|---|---|---|---|
+| 1 | Chien de cale (bâtard robuste) | `chien-garde` | `os-brut`, `eau` |
+| 2 | Molosse dressé (intimidation) | `molosse-garde` | `viande`, `collier-clous` |
+| 3 | Chien pisteur (renifle les trésors) | `chien-pisteur`, `indice-tresor` | `os-legende`, `entrainement-pistage` |
+| 4 | Chien de guerre (armure en cuir) | `chien-guerre`, `force-defense` | `molosse`, `armure-cuir` |
+| 5 | Cerbère des mers (3 têtes, 1 seul maître) | `cerbere-marin`, `terreur-absolue` | `chien-guerre`, `rituel-mythologique`, `os-kraken` |
+
+---
+
+## 🔗 Chaînes Animalières
+
+### Chaîne du Perroquet Légendaire
+
+```
+Animalerie niv 2 → perroquet-basique
+    ↓
+École de Dressage niv 1-4 → perroquet raconte des blagues salaces
+    ↓
+Éleveur de Perroquets niv 1-4 → perroquet-bilingue
+    ↓
+Éleveur de Perroquets niv 5 → PERROQUET IMMORTEL (12 capitaines, sagesse infinie)
+```
+
+### Chaîne du Spectacle Animalier
+
+```
+Animalerie niv 1-3 → rat / perroquet / singe
+    ↓
+École de Dressage niv 1-4 → tours simples → blagues salaces
+    ↓
+École de Dressage niv 5 → ANIMAL ARTISTE (numéro complet)
+    ↓
++ Théâtre de Marionnettes niv 3 → SPECTACLE ANIMALIER (export tourisme)
+```
+
+### Chaîne de la Défense par Créatures
+
+```
+Chenil niv 1-4 → chien-guerre
+    ↓
+Écurie de Créatures Marines niv 4 → tortue-monture blindée
+    ↓
++ Ossuaire niv 5 → os-kraken
+    ↓
+Chenil niv 5 → CERBÈRE MARIN (3 têtes, dissuasion absolue)
+```
+
+---
+
+## 📊 Nouveaux types de pirates
+
+| Type | Attiré par | Produit | Consomme |
+|---|---|---|---|
+| **Dresseur** 🎪 | École de Dressage, Animalerie, Chenil | `spectacle-animal`, `tour-dresse` | `animaux`, `friandises`, `accessoires` |
+| **Cavalier des Mers** 🌊 | Écurie de Créatures Marines, Animalerie niv 4-5 | `monture-dressee`, `exploration-marine` | `selle`, `poisson-frais`, `harnais` |
+
+---
+
+## 🏚️ 10. Logement & Infrastructure
 
 ### Baraquements "La Planque du Matelot"
 **Service de base :** Logement collectif sommaire.
@@ -550,7 +669,7 @@ Apothicaire niv 5 + Zoo Marin niv 5 → IMMORTALITÉ PARTIELLE
 
 ---
 
-## 🔗 10. Chaînes Économiques Clés
+## 🔗 11. Chaînes Économiques Clés
 
 ### Chaîne du Crochet de Luxe
 
