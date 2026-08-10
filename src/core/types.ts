@@ -54,29 +54,32 @@ export type BuildingCategory =
   | 'housing'
   | 'infrastructure';
 
-// --- Instance de bâtiment sur la carte ---
-export interface BuildingInstance {
-  id: string;
-  defId: BuildingId;
-  level: number;
-  gridX: number;
-  gridY: number;
-  stackLevel: number;      // 0 = sol, 1+ = empilé
-  constructionProgress: number; // 0..1
-  operational: boolean;
-}
-
 // --- Grille & Monde ---
 export interface Tile {
   x: number;
   y: number;
   terrain: TerrainType;
   height: number;          // 0 = mer, 1 = plage, 2+ = terre
-  building?: BuildingInstance;
-  stack: BuildingInstance[]; // bâtiments empilés au-dessus
+  buildings: BuildingInstance[]; // bâtiments sur cette tuile (0 ou plusieurs)
+  stackHeight: number;      // hauteur cumulée des bâtiments (en niveaux)
+  cliffFace?: 'n'|'s'|'e'|'w'; // face de falaise disponible pour construction
+  isCave: boolean;          // creusé dans la falaise → accessible aux bateaux
 }
 
-export type TerrainType = 'deep_water' | 'shallow_water' | 'sand' | 'palm' | 'mountain';
+// --- Bâtiment ---
+export interface BuildingInstance {
+  id: string;
+  defId: BuildingId;
+  level: number;
+  gridX: number;
+  gridY: number;
+  stackLevel: number;       // 0 = sol, 1 = étage 1, etc.
+  anchor: 'ground' | 'cliff' | 'cave' | 'stilts'; // type d'ancrage
+  constructionProgress: number; // 0..1
+  operational: boolean;
+}
+
+export type TerrainType = 'deep_water' | 'shallow_water' | 'sand' | 'palm' | 'mountain' | 'cave';
 
 export interface IslandData {
   seed: number;

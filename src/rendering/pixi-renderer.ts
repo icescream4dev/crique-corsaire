@@ -96,7 +96,7 @@ export class PixiRenderer implements IRenderer {
   }
 
   renderTile(t:Tile){ if(!this.cache[t.y])this.cache[t.y]=[]; if(this.cache[t.y][t.x])return; const g=new Graphics(); g.rect(t.x*TS,t.y*TS,TS,TS); g.fill(C[t.terrain]??0x333333); g.stroke({width:.5,color:0,alpha:.1}); this.tiles.addChild(g); this.cache[t.y][t.x]=g; }
-  renderBuilding(t:Tile){ if(!t.building)return; const b=t.building; const g=new Graphics(); const x=b.gridX*TS+1, y=b.gridY*TS-b.stackLevel*6+1; g.rect(x,y,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0}); g.rect(x,y,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444); this.blds.addChild(g); }
+  renderBuilding(t:Tile){ if(!t.buildings.length)return; const b=t.buildings[0]; const g=new Graphics(); const x=b.gridX*TS+1, y=b.gridY*TS-b.stackLevel*6+1; g.rect(x,y,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0}); g.rect(x,y,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444); this.blds.addChild(g); }
   renderPirate(p:{x:number;y:number;emoji:string}){void p;}
   clear(){ this.cache=[]; this.tiles.removeChildren(); this.blds.removeChildren(); }
   onResize(){ this.update(0); }

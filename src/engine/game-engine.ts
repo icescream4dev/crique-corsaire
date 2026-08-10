@@ -89,7 +89,7 @@ export class GameEngine {
     for (const row of this.state.island.tiles) {
       for (const tile of row) {
         this.renderer.renderTile(tile);
-        if (tile.building) this.renderer.renderBuilding(tile);
+        if (tile.buildings.length) this.renderer.renderBuilding(tile);
       }
     }
   }
@@ -98,7 +98,7 @@ export class GameEngine {
     const def = this.buildingDefs.find(d => d.id === defId);
     if (!def) return null;
     const tile = this.state.island.tiles[y]?.[x];
-    if (!tile || tile.building) return null;
+    if (!tile || tile.buildings.length) return null;
 
     const instance: BuildingInstance = {
       id: `${defId}_${x}_${y}_${Date.now()}`,
@@ -107,10 +107,11 @@ export class GameEngine {
       gridX: x,
       gridY: y,
       stackLevel: 0,
+      anchor: 'ground',
       constructionProgress: 0,
       operational: false,
     };
-    tile.building = instance;
+    tile.buildings.push(instance);
     this.state.buildings.set(instance.id, instance);
 
     // Redessiner juste cette tuile
