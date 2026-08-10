@@ -58,19 +58,18 @@ export class SimpleIslandGenerator implements IWorldGenerator {
       // Propagation
       for(let pass=0;pass<10;pass++)for(const[x,y]of il){let minD=dist.get(y*W+x)??999;for(const[dx,dy]of[[-1,0],[1,0],[0,-1],[0,1]]){const d=dist.get((y+dy)*W+(x+dx));if(d!==undefined&&d+1<minD)minD=d+1}dist.set(y*W+x,minD)}
 
-      // Calculer l'élévation pour cette île
-      const elevs=il.map(([x,y])=>({x,y,el:fb(x*.06,y*.06,seed+999,5)}));
-      elevs.sort((a,b)=>b.el-a.el);
-
-      // Assigner : sable aux bords (d<=2), montagne aux 15% les plus hauts, palm au reste
-      const topPct=Math.max(1,Math.floor(il.length*.15));
+      // Assigner : sable si plat (el basse), montagne si haut (même en bord de mer)
       for(const[x,y]of il){
         const d=dist.get(y*W+x)??99;
-        if(d<=2)T[y][x].terrain='sand';
+        const el=fb(x*.06,y*.06,seed+999,5);
+        if(d<=2&&el<.35)T[y][x].terrain='sand';
       }
+      // Montagne : les 20% les plus hauts (peut être en bord de mer)
+      const topPct=Math.max(1,Math.floor(il.length*.20));
+      const elevs=il.map(([x,y])=>({x,y,el:fb(x*.06,y*.06,seed+999,5)}));
+      elevs.sort((a,b)=>b.el-a.el);
       for(let i=0;i<topPct;i++){
         const{x,y}=elevs[i];
-        if(T[y][x].terrain!=='palm')continue; // ne pas écraser sable
         T[y][x].terrain='mountain';
       }
       // Garantir au moins 1 palm (remplacer un sable intérieur si nécessaire)
