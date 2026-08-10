@@ -83,8 +83,10 @@ export class PixiRenderer implements IRenderer {
     if(b.defId==='port'){
       if(this.portTex){
         const s=new Sprite(this.portTex);
-        s.x=bx*TS-TS*2; s.y=by*TS-TS*2; s.scale.set(0.25); // 128² → 32²
+        s.x=bx*TS-TS*2; s.y=by*TS-TS*2; s.scale.set(0.25);
         this.blds.addChild(s);
+        // Debug: cercle jaune pour confirmer que le code passe
+        const dg=new Graphics(); dg.circle(bx*TS+TS/2, by*TS+TS/2, 6); dg.fill(0xffff00); this.blds.addChild(dg);
       } else {
         // Fallback procédural
         const f=Math.sin(Date.now()*0.003)*0.5;
