@@ -81,7 +81,7 @@ export class PixiRenderer implements IRenderer {
     if(b.defId==='port'){
       if(this.portTexture){
         const s=new Sprite(this.portTexture);
-        s.anchor.set(0.5, 0.7); s.x=bx*TS+TS/2; s.y=by*TS+TS; s.scale.set(0.5);
+        s.x=bx*TS; s.y=by*TS-TS; s.scale.set(0.5);
         this.blds.addChild(s);
       } else {
         const g=new Graphics();
