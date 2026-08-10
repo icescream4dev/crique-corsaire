@@ -35,6 +35,11 @@ async function main() {
   // Exposer pour debug
   (window as any).gameEngine = engine;
   console.log('🏴‍☠️ Crique Corsaire — engine ready');
+
+  // Bouton régénération
+  document.getElementById('btn-regenerate')?.addEventListener('click', () => {
+    engine.regenerate();
+  });
 }
 
 main().catch(console.error);

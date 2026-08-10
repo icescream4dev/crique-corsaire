@@ -5,11 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Crique Corsaire</title>
     <style>
-      body { margin: 0; background: #1a1a2e; }
+      body { margin: 0; background: #1a1a2e; font-family: monospace; }
+      #toolbar { position: fixed; top: 8px; right: 8px; z-index: 20; display: flex; gap: 6px; }
+      #toolbar button { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+      #toolbar button:active { background: rgba(255,255,255,0.3); }
     </style>
   </head>
   <body>
     <div id="hud">🏴‍☠️ Crique Corsaire</div>
+    <div id="toolbar"><button id="btn-regenerate">🔄 Nouvelle île</button></div>
     <div id="game-container"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

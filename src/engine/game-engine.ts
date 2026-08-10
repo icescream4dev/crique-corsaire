@@ -121,6 +121,19 @@ export class GameEngine {
   save(): Promise<void> { return this.persistence.save(this.state); }
   destroy(): void { this.running = false; this.events.clear(); }
 
+  /** Régénère une nouvelle île (pour les tests). */
+  regenerate(): void {
+    const seed = Date.now();
+    this.state.island = this.generator.generate(seed);
+    this.state.buildings.clear();
+    this.state.resources.clear();
+    this.state.pirates = [];
+    this.state.gems = 10;
+    this.state.tick = 0;
+    this.renderer.centerOnWorld(this.state.island.width, this.state.island.height);
+    this.buildWorld();
+  }
+
   private createEmptyState(): GameState {
     return {
       tick: 0,
