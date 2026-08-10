@@ -8,6 +8,7 @@ import type { IslandData, GameState, BuildingDef, ResourceDef, PirateType, Tile 
 /** Abstraction du rendu. Le domaine appelle ces méthodes, l'adapter PixiJS les implémente. */
 export interface IRenderer {
   init(container: HTMLElement): Promise<void>;
+  centerOnWorld(worldW: number, worldH: number): void;
   renderTile(tile: Tile): void;
   renderBuilding(tile: Tile): void;
   renderPirate(pirate: { x: number; y: number; emoji: string }): void;

@@ -61,6 +61,7 @@ export class GameEngine {
     }
 
     await this.renderer.init(container);
+    this.renderer.centerOnWorld(this.state.island.width, this.state.island.height);
     this.renderFullMap();
     this.running = true;
     this.loop(performance.now());
