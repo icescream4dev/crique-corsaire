@@ -125,6 +125,6 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     const res:{x:number;y:number;resource:string;amount:number}[]=[];
     const rt=['bois_flotte','algues_rares','pierre','fer_raille','sable_fin'];
     for(let i=0;i<Math.floor(20*R);i++){const rx=Math.floor(hh(i,0,seed+777)*W),ry=Math.floor(hh(i,1,seed+777)*H);if(T[ry]?.[rx]?.terrain!=='deep_water'&&T[ry]?.[rx]?.terrain!=='shallow_water')res.push({x:rx,y:ry,resource:rt[i%rt.length],amount:Math.floor(hh(i,2,seed+777)*50)+10})}
-    return{seed,width:W,height:H,tiles:T,shorePoints:sh,cliffFaces:cl,resources:res};
+    return{seed,width:W,height:H,tiles:T,shorePoints:sh,cliffFaces:cl,resources:res,caveSystems:[]};
   }
 }

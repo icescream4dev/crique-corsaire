@@ -60,10 +60,19 @@ export interface Tile {
   y: number;
   terrain: TerrainType;
   height: number;          // 0 = mer, 1 = plage, 2+ = terre
-  buildings: BuildingInstance[]; // bâtiments sur cette tuile (0 ou plusieurs)
-  stackHeight: number;      // hauteur cumulée des bâtiments (en niveaux)
-  cliffFace?: 'n'|'s'|'e'|'w'; // face de falaise disponible pour construction
-  isCave: boolean;          // creusé dans la falaise → accessible aux bateaux
+  buildings: BuildingInstance[];
+  stackHeight: number;
+  cliffFace?: 'n'|'s'|'e'|'w';
+  isCave: boolean;
+  caveId?: string;          // relié à un système de grottes
+}
+
+// --- Système de grottes ---
+export interface CaveSystem {
+  id: string;
+  tiles: { x: number; y: number }[];  // toutes les tuiles de cette grotte
+  hasWater: boolean;                   // mer souterraine
+  entranceFaces: { x: number; y: number; direction: 'n'|'s'|'e'|'w' }[]; // entrées sur falaises
 }
 
 // --- Bâtiment ---
@@ -73,13 +82,13 @@ export interface BuildingInstance {
   level: number;
   gridX: number;
   gridY: number;
-  stackLevel: number;       // 0 = sol, 1 = étage 1, etc.
-  anchor: 'ground' | 'cliff' | 'cave' | 'stilts'; // type d'ancrage
-  constructionProgress: number; // 0..1
+  stackLevel: number;
+  anchor: 'ground' | 'cliff' | 'cave' | 'stilts' | 'elevator';
+  constructionProgress: number;
   operational: boolean;
 }
 
-export type TerrainType = 'deep_water' | 'shallow_water' | 'sand' | 'palm' | 'mountain' | 'cave';
+export type TerrainType = 'deep_water' | 'shallow_water' | 'sand' | 'palm' | 'mountain' | 'cave' | 'cave_water';
 
 export interface IslandData {
   seed: number;
@@ -89,6 +98,7 @@ export interface IslandData {
   shorePoints: { x: number; y: number }[];
   cliffFaces: { x: number; y: number; direction: 'n' | 's' | 'e' | 'w' }[];
   resources: { x: number; y: number; resource: ResourceId; amount: number }[];
+  caveSystems: CaveSystem[];
 }
 
 // --- Pirates ---

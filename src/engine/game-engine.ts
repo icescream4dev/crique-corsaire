@@ -138,7 +138,7 @@ export class GameEngine {
   private createEmptyState(): GameState {
     return {
       tick: 0,
-      island: { seed: 0, width: 0, height: 0, tiles: [], shorePoints: [], cliffFaces: [], resources: [] },
+      island: { seed: 0, width: 0, height: 0, tiles: [], shorePoints: [], cliffFaces: [], resources: [], caveSystems: [] },
       buildings: new Map(),
       resources: new Map(),
       pirates: [],
