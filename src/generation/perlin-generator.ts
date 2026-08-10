@@ -25,7 +25,7 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     for(let y=0;y<H;y++){land[y]=[];T[y]=[];for(let x=0;x<W;x++){
       T[y][x]={x,y,terrain:'deep_water',height:0,stack:[],building:undefined};
       if(x<=1||x>=W-2||y<=1||y>=H-2){land[y][x]=false;continue}
-      let bestD=Infinity;for(const s of isles){const dx=x-s.cx,dy=y-s.cy,cos=Math.cos(-s.rot),sin=Math.sin(-s.rot),lx=dx*cos-dy*sin,ly=dx*sin+dy*cos,nd=Math.sqrt((lx/s.rx)**2+(ly/s.ry)**2),a=Math.atan2(ly,lx),coast=fb(x*.7+Math.cos(a)*4,y*.7+Math.sin(a)*4,s.cx+s.cy+50,3)*s.amp,fj=nn(x*1.4+Math.cos(a)*5,y*1.4+Math.sin(a)*5,s.cx+s.cy+99)*.35;if(nd-coast-fj<bestD)bestD=nd-coast-fj}
+      let bestD=Infinity;for(const s of isles){const dx=x-s.cx,dy=y-s.cy,cos=Math.cos(-s.rot),sin=Math.sin(-s.rot),lx=dx*cos-dy*sin,ly=dx*sin+dy*cos,nd=Math.sqrt((lx/s.rx)**2+(ly/s.ry)**2),a=Math.atan2(ly,lx),coast=fb(x*.6+Math.cos(a)*5,y*.6+Math.sin(a)*5,s.cx+s.cy+50,3)*s.amp,fj=nn(x*1.2+Math.cos(a)*6,y*1.2+Math.sin(a)*6,s.cx+s.cy+99)*.6;if(nd-coast-fj<bestD)bestD=nd-coast-fj}
       land[y][x]=bestD<.78;T[y][x].terrain=land[y][x]?'palm':'deep_water';
     }}
 
