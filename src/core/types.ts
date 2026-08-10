@@ -75,6 +75,14 @@ export interface CaveSystem {
   entranceFaces: { x: number; y: number; direction: 'n'|'s'|'e'|'w' }[]; // entrées sur falaises
 }
 
+// --- Éclairage ---
+export interface LightSource {
+  type: 'torch' | 'lantern' | 'crystal' | 'bioluminescent';
+  radius: number;        // portée en tuiles
+  color: string;          // couleur hex
+  flicker: boolean;       // vacillement
+}
+
 // --- Bâtiment ---
 export interface BuildingInstance {
   id: string;
@@ -83,9 +91,10 @@ export interface BuildingInstance {
   gridX: number;
   gridY: number;
   stackLevel: number;
-  anchor: 'ground' | 'cliff' | 'cave' | 'stilts' | 'elevator';
+  anchor: 'ground' | 'cliff' | 'cave' | 'stilts' | 'elevator' | 'ceiling';
   constructionProgress: number;
   operational: boolean;
+  lights?: LightSource[];  // sources de lumière émises par ce bâtiment
 }
 
 export type TerrainType = 'deep_water' | 'shallow_water' | 'sand' | 'palm' | 'mountain' | 'cave' | 'cave_water';
