@@ -76,7 +76,7 @@ export interface Tile {
   stack: BuildingInstance[]; // bâtiments empilés au-dessus
 }
 
-export type TerrainType = 'water' | 'sand' | 'grass' | 'rock' | 'cliff' | 'cliff_face' | 'cave';
+export type TerrainType = 'deep_water' | 'shallow_water' | 'sand' | 'palm' | 'mountain';
 
 export interface IslandData {
   seed: number;

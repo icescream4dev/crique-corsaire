@@ -6,7 +6,7 @@ const TS = 16; // tile size
 const ZS = 0.08; // zoom step
 const ZMIN = 0.2; const ZMAX = 3.0;
 
-const C: Record<string, number> = { water:0x2980b9, sand:0xf0e68c, grass:0x27ae60, rock:0x7f8c8d, cliff:0x5d4e37, cliff_face:0x8b7355, cave:0x2c1810 };
+const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226 };
 
 export class PixiRenderer implements IRenderer {
   private app!: Application;
