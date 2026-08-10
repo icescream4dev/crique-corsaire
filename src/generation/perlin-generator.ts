@@ -49,8 +49,10 @@ export class SimpleIslandGenerator implements IWorldGenerator {
       const islands = this.placeIslands(w, h, M, rng);
       const { tiles: genTiles, isLand: genLand } = this.buildTerrain(w, h, M, islands, seed, attempt);
       const coverage = this.countLand(genLand, M, w, h) / totalTiles;
+      // Archipels : plus d'eau entre les îles → seuil plus bas
+      const minCov = islands.length > 1 ? 0.25 : 0.35;
 
-      if (coverage >= 0.35 && coverage <= 0.50) {
+      if (coverage >= minCov && coverage <= 0.50) {
         bestResult = { tiles: genTiles, isLand: genLand, islands, coverage };
         break;
       }
