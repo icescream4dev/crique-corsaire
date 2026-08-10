@@ -86,8 +86,9 @@ export class PixiRenderer implements IRenderer {
         this.blds.addChild(s);
       } else {
         const g=new Graphics();
-        g.rect(bx*TS,by*TS,TS,TS); g.fill(0x8b6914); g.stroke({width:1,color:0});
+        g.rect(bx*TS, by*TS, TS, TS); g.fill(0x8b6914); g.stroke({width:1,color:0xff0000});
         this.blds.addChild(g);
+        console.log('Port fallback at', bx, by, 'world:', bx*TS, by*TS, 'blds:', this.blds.children.length);
       }
     }else{
       const g=new Graphics();
