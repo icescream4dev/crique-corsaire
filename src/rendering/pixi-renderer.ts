@@ -7,7 +7,7 @@ import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
-const TILE_SIZE = 32;
+const TILE_SIZE = 16;
 
 const TERRAIN_COLORS: Record<string, number> = {
   water: 0x2980b9,       // bleu océan

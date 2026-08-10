@@ -23,8 +23,8 @@ function smoothNoise(x: number, y: number, seed: number): number {
 
 export class SimpleIslandGenerator implements IWorldGenerator {
   generate(seed: number, params?: GenerationParams): IslandData {
-    const w = params?.width ?? 60;
-    const h = params?.height ?? 40;
+    const w = params?.width ?? 80;
+    const h = params?.height ?? 50;
     const cliffFreq = params?.cliffFrequency ?? 0.15;
     const richness = params?.resourceRichness ?? 0.5;
 
