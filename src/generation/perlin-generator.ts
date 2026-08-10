@@ -14,11 +14,11 @@ interface I{cx:number;cy:number;rx:number;ry:number;rot:number;amp:number}
 export class SimpleIslandGenerator implements IWorldGenerator {
   generate(seed:number,params?:GenerationParams):IslandData{
     const W=params?.width??80,H=params?.height??50,R=params?.resourceRichness??0.5;
-    const M=3,nI=2+Math.floor(hh(1,0,seed)*5);
+    const M=2,nI=10+Math.floor(hh(1,0,seed)*6); // 10-15 îles
     const isles:I[]=[];
-    const maxR=Math.min(W,H)*.18,zx=W-M*2-maxR*2,zy=H-M*2-maxR*2;
+    const maxR=Math.min(W,H)*.10,zx=W-M*2-maxR*2,zy=H-M*2-maxR*2;
     isles.push({cx:M+maxR+hh(2,0,seed)*zx,cy:M+maxR+hh(3,0,seed)*zy,rx:maxR*(.85+hh(4,0,seed)*.45),ry:maxR*(.55+hh(5,0,seed)*.65),rot:hh(6,0,seed)*Math.PI*2,amp:.4+hh(7,0,seed)*.4});
-    for(let i=1;i<nI;i++){const ri=maxR*(.75+hh(i*17,0,seed)*.55);let ok=false;for(let a=0;a<60&&!ok;a++){const ref=isles[Math.floor(hh(i*13+a,0,seed)*isles.length)],ang=hh(i*13+a+1,0,seed)*Math.PI*2,gap=2+hh(i*13+a+2,0,seed)*2,cx=ref.cx+Math.cos(ang)*(ref.rx+ri+gap),cy=ref.cy+Math.sin(ang)*(ref.rx+ri+gap);if(cx<M+ri||cx>W-M-ri||cy<M+ri||cy>H-M-ri)continue;let ov=false;for(const s of isles)if(Math.hypot(cx-s.cx,cy-s.cy)<s.rx+ri+gap-1){ov=true;break}if(!ov){isles.push({cx,cy,rx:ri,ry:ri*(.55+hh(i*17+a+1,0,seed)*.7),rot:hh(i*17+a+2,0,seed)*Math.PI*2,amp:.4+hh(i*17+a+3,0,seed)*.4});ok=true}}}
+    for(let i=1;i<nI;i++){const ri=maxR*(.7+hh(i*17,0,seed)*.6);let ok=false;for(let a=0;a<100&&!ok;a++){const ref=isles[Math.floor(hh(i*13+a,0,seed)*isles.length)],ang=hh(i*13+a+1,0,seed)*Math.PI*2,gap=4+hh(i*13+a+2,0,seed)*4,cx=ref.cx+Math.cos(ang)*(ref.rx+ri+gap),cy=ref.cy+Math.sin(ang)*(ref.rx+ri+gap);if(cx<M+ri||cx>W-M-ri||cy<M+ri||cy>H-M-ri)continue;let ov=false;for(const s of isles)if(Math.hypot(cx-s.cx,cy-s.cy)<s.rx+ri+2){ov=true;break}if(!ov){isles.push({cx,cy,rx:ri,ry:ri*(.55+hh(i*17+a+1,0,seed)*.7),rot:hh(i*17+a+2,0,seed)*Math.PI*2,amp:.35+hh(i*17+a+3,0,seed)*.45});ok=true}}}
 
     // 1. Masque terre/eau binaire
     const land:boolean[][]=[],T:Tile[][]=[];
@@ -26,7 +26,7 @@ export class SimpleIslandGenerator implements IWorldGenerator {
       T[y][x]={x,y,terrain:'deep_water',height:0,stack:[],building:undefined};
       if(x<=1||x>=W-2||y<=1||y>=H-2){land[y][x]=false;continue}
       let bestD=Infinity;for(const s of isles){const dx=x-s.cx,dy=y-s.cy,cos=Math.cos(-s.rot),sin=Math.sin(-s.rot),lx=dx*cos-dy*sin,ly=dx*sin+dy*cos,nd=Math.sqrt((lx/s.rx)**2+(ly/s.ry)**2),a=Math.atan2(ly,lx),coast=fb(x*.7+Math.cos(a)*4,y*.7+Math.sin(a)*4,s.cx+s.cy+50,3)*s.amp,fj=nn(x*1.4+Math.cos(a)*5,y*1.4+Math.sin(a)*5,s.cx+s.cy+99)*.35;if(nd-coast-fj<bestD)bestD=nd-coast-fj}
-      land[y][x]=bestD<.88;T[y][x].terrain=land[y][x]?'palm':'deep_water';
+      land[y][x]=bestD<.78;T[y][x].terrain=land[y][x]?'palm':'deep_water';
     }}
 
     // 2. Shallow water + nettoyage
