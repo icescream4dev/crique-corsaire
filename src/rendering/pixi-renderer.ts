@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Sprite } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
@@ -94,6 +94,12 @@ export class PixiRenderer implements IRenderer {
       g.rect(bx+1,by+1,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444);
     }
     this.blds.addChild(g);
+    // Sprite scenario.com en surcouche
+    if(b.defId==='port'){
+      const s=Sprite.from('/ponton-pirate.png');
+      s.x=bx*TS-TS*3; s.y=by*TS-TS*4; s.scale.set(0.25);
+      this.blds.addChild(s);
+    }
   }
 
   getTileAt(sx:number, sy:number): {x:number;y:number}|null {
