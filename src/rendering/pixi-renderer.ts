@@ -2,103 +2,103 @@ import { Application, Container, Graphics } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
-const TILE_SIZE = 16;
-const ZOOM_STEP = 0.08;
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 3.0;
+const TS = 16; // tile size
+const ZS = 0.08; // zoom step
+const ZMIN = 0.2; const ZMAX = 3.0;
 
-const TERRAIN: Record<string, number> = {
-  water: 0x2980b9, sand: 0xf0e68c, grass: 0x27ae60,
-  rock: 0x7f8c8d, cliff: 0x5d4e37, cliff_face: 0x8b7355, cave: 0x2c1810,
-};
+const C: Record<string, number> = { water:0x2980b9, sand:0xf0e68c, grass:0x27ae60, rock:0x7f8c8d, cliff:0x5d4e37, cliff_face:0x8b7355, cave:0x2c1810 };
 
 export class PixiRenderer implements IRenderer {
   private app!: Application;
   private world!: Container;
   private tiles!: Container;
-  private buildings!: Container;
-  private camX = 0; private camY = 0; private zoom = 1;
-  private wW = 0; private wH = 0;
+  private blds!: Container;
+  private cx = 0; private cy = 0; private zm = 1;
+  private ww = 0; private wh = 0;
+  private ct!: HTMLElement;
 
-  private dragging = false;
-  private dsx = 0; private dsy = 0;
-  private dcx = 0; private dcy = 0;
-
-  private pDist = 0; private pZoom = 1;
+  private drag = false;
+  private dsx=0; private dsy=0; private dcx=0; private dcy=0;
+  private pd=0; private pz=1;
   private cache: Graphics[][] = [];
 
   async init(ct: HTMLElement): Promise<void> {
+    this.ct = ct;
     this.app = new Application();
-    await this.app.init({ resizeTo: ct, backgroundColor: 0x0a1628, antialias: false, resolution: window.devicePixelRatio || 1, roundPixels: true });
+    await this.app.init({ resizeTo: ct, backgroundColor:0x0a1628, antialias:false, resolution:1, roundPixels:true });
     ct.appendChild(this.app.canvas);
-    this.world = new Container(); this.tiles = new Container(); this.buildings = new Container();
-    this.world.addChild(this.tiles, this.buildings); this.app.stage.addChild(this.world);
+    this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
+    this.world.addChild(this.tiles, this.blds); this.app.stage.addChild(this.world);
     this.setup();
   }
 
-  // Coordonnées canvas (recalculées à chaque appel)
-  private cv(x: number): number { return x - this.app.canvas.getBoundingClientRect().left; }
-  private cy(y: number): number { return y - this.app.canvas.getBoundingClientRect().top; }
-  private get sw(): number { return this.app.screen.width; }
-  private get sh(): number { return this.app.screen.height; }
+  private get rect() { return this.ct.getBoundingClientRect(); }
+  private get sw() { return this.rect.width; }
+  private get sh() { return this.rect.height; }
 
-  private clamp(): void {
-    if (!this.wW || !this.wH) return;
-    const iw = this.wW * TILE_SIZE * this.zoom;
-    const ih = this.wH * TILE_SIZE * this.zoom;
-    const pad = 30;
-    this.camX = Math.max(pad - iw, Math.min(this.sw - pad, this.camX));
-    this.camY = Math.max(pad - ih, Math.min(this.sh - pad, this.camY));
+  private at(cx:number, cy:number, nz:number) {
+    nz = Math.max(ZMIN, Math.min(ZMAX, nz));
+    const wx = (cx - this.cx) / this.zm;
+    const wy = (cy - this.cy) / this.zm;
+    this.zm = nz;
+    this.cx = cx - wx * nz;
+    this.cy = cy - wy * nz;
   }
 
-  private zoomTo(cx: number, cy: number, nz: number): void {
-    nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nz));
-    const wx = (cx - this.camX) / this.zoom;
-    const wy = (cy - this.camY) / this.zoom;
-    this.zoom = nz;
-    this.camX = cx - wx * nz;
-    this.camY = cy - wy * nz;
+  private clamp() {
+    if (!this.ww || !this.wh) return;
+    const iw = this.ww * TS * this.zm, ih = this.wh * TS * this.zm;
+    this.cx = Math.max(30 - iw, Math.min(this.sw - 30, this.cx));
+    this.cy = Math.max(30 - ih, Math.min(this.sh - 30, this.cy));
   }
 
-  private setup(): void {
+  private setup() {
     const c = this.app.canvas;
-    c.addEventListener('wheel', (e: WheelEvent) => { e.preventDefault(); this.zoomTo(this.cv(e.clientX), this.cy(e.clientY), this.zoom + (e.deltaY > 0 ? -1 : 1) * ZOOM_STEP); }, { passive: false });
-    c.addEventListener('mousedown', (e: MouseEvent) => { this.dragging = true; this.dsx = e.clientX; this.dsy = e.clientY; this.dcx = this.camX; this.dcy = this.camY; });
-    window.addEventListener('mouseup', () => this.dragging = false);
-    window.addEventListener('mousemove', (e: MouseEvent) => { if (!this.dragging) return; this.camX = this.dcx + (e.clientX - this.dsx) / 2; this.camY = this.dcy + (e.clientY - this.dsy) / 2; this.clamp(); });
-    c.addEventListener('touchstart', (e: TouchEvent) => {
-      if (e.touches.length === 1) { this.dragging = true; this.dsx = e.touches[0].clientX; this.dsy = e.touches[0].clientY; this.dcx = this.camX; this.dcy = this.camY; }
-      else if (e.touches.length === 2) { this.dragging = false; this.pDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); this.pZoom = this.zoom; }
-    }, { passive: false });
-    c.addEventListener('touchmove', (e: TouchEvent) => { e.preventDefault();
-      if (e.touches.length === 1 && this.dragging) { this.camX = this.dcx + (e.touches[0].clientX - this.dsx) / 2; this.camY = this.dcy + (e.touches[0].clientY - this.dsy) / 2; this.clamp(); }
-      else if (e.touches.length === 2) {
-        const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.pZoom * (dist / this.pDist)));
-        this.zoomTo(this.cv(mx), this.cy(my), nz);
-        this.pZoom = this.zoom; this.pDist = dist;
+    c.addEventListener('wheel', e => { e.preventDefault(); this.at(e.offsetX, e.offsetY, this.zm + (e.deltaY>0?-1:1)*ZS); }, {passive:false});
+    c.addEventListener('mousedown', e => { this.drag=true; this.dsx=e.clientX; this.dsy=e.clientY; this.dcx=this.cx; this.dcy=this.cy; });
+    window.addEventListener('mouseup', () => this.drag=false);
+    window.addEventListener('mousemove', e => { if(!this.drag)return; this.cx=this.dcx+(e.clientX-this.dsx)/2; this.cy=this.dcy+(e.clientY-this.dsy)/2; this.clamp(); });
+    c.addEventListener('touchstart', (e:TouchEvent) => {
+      if(e.touches.length===1){ this.drag=true; this.dsx=e.touches[0].clientX; this.dsy=e.touches[0].clientY; this.dcx=this.cx; this.dcy=this.cy; }
+      else if(e.touches.length===2){ this.drag=false; this.pd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); this.pz=this.zm; }
+    }, {passive:false});
+    c.addEventListener('touchmove', (e:TouchEvent) => { e.preventDefault();
+      if(e.touches.length===1&&this.drag){ this.cx=this.dcx+(e.touches[0].clientX-this.dsx)/2; this.cy=this.dcy+(e.touches[0].clientY-this.dsy)/2; this.clamp(); }
+      else if(e.touches.length===2){
+        const t0=e.touches[0], t1=e.touches[1];
+        const mx=(t0.clientX+t1.clientX)/2, my=(t0.clientY+t1.clientY)/2;
+        const d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
+        const nz=Math.max(ZMIN, Math.min(ZMAX, this.pz*(d/this.pd)));
+        // Coordonnées canvas via offsetX du conteneur
+        const r = this.rect;
+        this.at(mx-r.left, my-r.top, nz);
+        this.pz=this.zm; this.pd=d;
       }
-    }, { passive: false });
-    c.addEventListener('touchend', () => this.dragging = false);
-    c.style.touchAction = 'none';
+    }, {passive:false});
+    c.addEventListener('touchend', () => this.drag=false);
+    c.style.touchAction='none';
   }
 
-  update(_dt: number): void {
-    this.world.scale.set(this.zoom);
-    this.world.x = this.camX;
-    this.world.y = this.camY;
-    // Debug HUD
-    const hud = document.getElementById('hud');
-    if (hud) hud.textContent = `🏴‍☠️ Crique Corsaire | sw:${this.sw} sh:${this.sh} | cam:${Math.round(this.camX)},${Math.round(this.camY)} | zoom:${this.zoom.toFixed(2)} | w:${this.wW}x${this.wH}`;
+  update(_dt:number) {
+    this.world.scale.set(this.zm);
+    this.world.x = this.cx;
+    this.world.y = this.cy;
+    const h = document.getElementById('hud');
+    if (h) h.textContent = `sw:${Math.round(this.sw)} sh:${Math.round(this.sh)} cam:${Math.round(this.cx)},${Math.round(this.cy)} zm:${this.zm.toFixed(2)} wld:${this.ww}x${this.wh}`;
   }
-  centerOnWorld(w: number, h: number): void { this.wW = w; this.wH = h; const ww = w * TILE_SIZE, wh = h * TILE_SIZE; this.zoom = Math.min(1, this.sw / ww, this.sh / wh); this.camX = this.sw / 2 - (ww / 2) * this.zoom; this.camY = this.sh / 2 - (wh / 2) * this.zoom; }
 
-  renderTile(t: Tile): void { if (!this.cache[t.y]) this.cache[t.y] = []; if (this.cache[t.y][t.x]) return; const g = new Graphics(); g.rect(t.x * TILE_SIZE, t.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); g.fill(TERRAIN[t.terrain] ?? 0x333333); g.stroke({ width: 0.5, color: 0, alpha: 0.1 }); this.tiles.addChild(g); this.cache[t.y][t.x] = g; }
-  renderBuilding(t: Tile): void { if (!t.building) return; const b = t.building; const g = new Graphics(); const x = b.gridX * TILE_SIZE + 1, y = b.gridY * TILE_SIZE - b.stackLevel * 6 + 1; g.rect(x, y, TILE_SIZE - 2, TILE_SIZE - 2); g.fill(b.operational ? 0xd4a017 : 0x555555); g.stroke({ width: 1, color: 0 }); g.rect(x, y, TILE_SIZE - 2, 3); g.fill(b.operational ? 0xe74c3c : 0x444444); this.buildings.addChild(g); }
-  renderPirate(p: { x: number; y: number; emoji: string }): void { void p; }
-  clear(): void { this.cache = []; this.tiles.removeChildren(); this.buildings.removeChildren(); }
-  onResize(): void { this.update(0); }
-  getTileAt(sx: number, sy: number): { x: number; y: number } | null { return { x: Math.floor((this.cv(sx) - this.camX) / this.zoom / TILE_SIZE), y: Math.floor((this.cy(sy) - this.camY) / this.zoom / TILE_SIZE) }; }
+  centerOnWorld(w:number, h:number) {
+    this.ww=w; this.wh=h;
+    const ww=w*TS, wh=h*TS;
+    this.zm = Math.min(1, this.sw/ww, this.sh/wh);
+    this.cx = this.sw/2 - (ww/2)*this.zm;
+    this.cy = this.sh/2 - (wh/2)*this.zm;
+  }
+
+  renderTile(t:Tile){ if(!this.cache[t.y])this.cache[t.y]=[]; if(this.cache[t.y][t.x])return; const g=new Graphics(); g.rect(t.x*TS,t.y*TS,TS,TS); g.fill(C[t.terrain]??0x333333); g.stroke({width:.5,color:0,alpha:.1}); this.tiles.addChild(g); this.cache[t.y][t.x]=g; }
+  renderBuilding(t:Tile){ if(!t.building)return; const b=t.building; const g=new Graphics(); const x=b.gridX*TS+1, y=b.gridY*TS-b.stackLevel*6+1; g.rect(x,y,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0}); g.rect(x,y,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444); this.blds.addChild(g); }
+  renderPirate(p:{x:number;y:number;emoji:string}){void p;}
+  clear(){ this.cache=[]; this.tiles.removeChildren(); this.blds.removeChildren(); }
+  onResize(){ this.update(0); }
+  getTileAt(x:number,y:number){ const r=this.rect; return {x:Math.floor((x-r.left-this.cx)/this.zm/TS), y:Math.floor((y-r.top-this.cy)/this.zm/TS)}; }
 }
