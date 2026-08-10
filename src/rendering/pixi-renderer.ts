@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Sprite } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
@@ -10,6 +10,7 @@ export class PixiRenderer implements IRenderer {
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
+  private pt: any = null;
 
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
@@ -19,6 +20,11 @@ export class PixiRenderer implements IRenderer {
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
     this.world.addChild(this.tiles, this.blds); this.app.stage.addChild(this.world);
     this.setupEvents();
+    // Charger le sprite scenario.com
+    const img = new Image();
+    img.onload = () => { this.pt = img; };
+    img.onerror = () => { console.warn('sprite not loaded'); };
+    img.src = '/ponton-pirate.png';
   }
 
   private get rect() { return this.ct.getBoundingClientRect(); }
@@ -94,6 +100,12 @@ export class PixiRenderer implements IRenderer {
       g.rect(bx+1,by+1,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444);
     }
     this.blds.addChild(g);
+    // Surcouche sprite scenario.com si chargé
+    if(b.defId==='port' && this.pt){
+      const s = Sprite.from(this.pt);
+      s.x = bx*TS-TS*3; s.y = by*TS-TS*4; s.scale.set(0.25);
+      this.blds.addChild(s);
+    }
   }
 
   getTileAt(sx:number, sy:number): {x:number;y:number}|null {
