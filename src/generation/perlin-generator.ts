@@ -17,10 +17,8 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     const M=2,nI=10+Math.floor(hh(1,0,seed)*6); // 10-15 îles
     const isles:I[]=[];
     const maxR=Math.min(W,H)*.10;
-    // Toutes les îles orbitent autour du centre du cluster
-    const clusterCX=W/2, clusterCY=H/2, clusterR=Math.min(W,H)*.35;
-    isles.push({cx:clusterCX+hh(2,0,seed)*clusterR-clusterR/2,cy:clusterCY+hh(3,0,seed)*clusterR-clusterR/2,rx:maxR*(.85+hh(4,0,seed)*.45),ry:maxR*(.55+hh(5,0,seed)*.65),rot:hh(6,0,seed)*Math.PI*2,amp:.4+hh(7,0,seed)*.4});
-    for(let i=1;i<nI;i++){const ri=maxR*(.7+hh(i*17,0,seed)*.6);let ok=false;for(let a=0;a<100&&!ok;a++){const ang=hh(i*13+a,0,seed)*Math.PI*2,dist=hh(i*13+a+1,0,seed)*clusterR,cx=clusterCX+Math.cos(ang)*dist,cy=clusterCY+Math.sin(ang)*dist;if(cx<M+ri||cx>W-M-ri||cy<M+ri||cy>H-M-ri)continue;let ov=false;for(const s of isles)if(Math.hypot(cx-s.cx,cy-s.cy)<s.rx+ri+2){ov=true;break}if(!ov){isles.push({cx,cy,rx:ri,ry:ri*(.55+hh(i*17+a+1,0,seed)*.7),rot:hh(i*17+a+2,0,seed)*Math.PI*2,amp:.35+hh(i*17+a+3,0,seed)*.45});ok=true}}}
+    isles.push({cx:M+maxR+hh(2,0,seed)*(W-M*2-maxR*2),cy:M+maxR+hh(3,0,seed)*(H-M*2-maxR*2),rx:maxR*(.85+hh(4,0,seed)*.45),ry:maxR*(.55+hh(5,0,seed)*.65),rot:hh(6,0,seed)*Math.PI*2,amp:.4+hh(7,0,seed)*.4});
+    for(let i=1;i<nI;i++){const ri=maxR*(.7+hh(i*17,0,seed)*.6);let ok=false;for(let a=0;a<100&&!ok;a++){const ref=isles[Math.floor(hh(i*13+a,0,seed)*isles.length)],ang=hh(i*13+a+1,0,seed)*Math.PI*2,gap=5+hh(i*13+a+2,0,seed)*4,cx=ref.cx+Math.cos(ang)*(ref.rx+ri+gap),cy=ref.cy+Math.sin(ang)*(ref.rx+ri+gap);if(cx<M+ri||cx>W-M-ri||cy<M+ri||cy>H-M-ri)continue;let ov=false;for(const s of isles)if(Math.hypot(cx-s.cx,cy-s.cy)<s.rx+ri+3){ov=true;break}if(!ov){isles.push({cx,cy,rx:ri,ry:ri*(.55+hh(i*17+a+1,0,seed)*.7),rot:hh(i*17+a+2,0,seed)*Math.PI*2,amp:.35+hh(i*17+a+3,0,seed)*.45});ok=true}}}
 
     // 1. Masque terre/eau binaire
     const land:boolean[][]=[],T:Tile[][]=[];
@@ -51,6 +49,13 @@ export class SimpleIslandGenerator implements IWorldGenerator {
       const il:[number,number][]=[],q:[[number,number]]=[[x,y]];vis[y][x]=true;
       while(q.length){const[cx,cy]=q.pop()!;il.push([cx,cy]);for(const[dx,dy]of[[-1,0],[1,0],[0,-1],[0,1]]){const nx=cx+dx,ny=cy+dy;if(nx>=0&&nx<W&&ny>=0&&ny<H&&!vis[ny][nx]&&land[ny][nx]){vis[ny][nx]=true;q.push([nx,ny])}}}
       islands.push(il);
+    }
+
+    // 4b. Connecter les îles proches par de l'eau peu profonde
+    for(let i=0;i<islands.length;i++)for(let j=i+1;j<islands.length;j++){
+      let md=Infinity,ba:[number,number]=[0,0],bb:[number,number]=[0,0];
+      for(const[ax,ay]of islands[i])for(const[bx,by]of islands[j]){const d=Math.abs(ax-bx)+Math.abs(ay-by);if(d<md){md=d;ba=[ax,ay];bb=[bx,by]}}
+      if(md<=5){let x=ba[0],y=ba[1];const dx=Math.sign(bb[0]-ba[0]),dy=Math.sign(bb[1]-ba[1]);while(x!==bb[0]||y!==bb[1]){if(!land[y]?.[x])T[y][x].terrain='shallow_water';if(x!==bb[0])x+=dx;if(y!==bb[1])y+=dy;}}
     }
 
     // 5. Pour chaque île : supprimer les micro-îles (<3px), assigner terrain aux autres
