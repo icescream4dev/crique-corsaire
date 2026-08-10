@@ -1,0 +1,21 @@
+{
+  "id": "port",
+  "name": "Port",
+  "category": "port",
+  "description": "Un petit ponton fait de 4 planches et d'un drapeau pirate. Gratuit.",
+  "emoji": "⚓",
+  "tileWidth": 1,
+  "tileHeight": 1,
+  "maxStackHeight": 1,
+  "levels": [
+    {
+      "level": 1,
+      "displayName": "Ponton de fortune",
+      "description": "4 planches et un drapeau. Ça flotte.",
+      "inputs": {},
+      "outputs": {},
+      "buildCost": {},
+      "buildTime": 0
+    }
+  ]
+}

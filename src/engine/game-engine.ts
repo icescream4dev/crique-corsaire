@@ -16,6 +16,7 @@ export class GameEngine {
   private running = false;
   private lastTick = 0;
   private readonly TICK_MS = 1000;
+  selectedBuilding: string | null = null; // mode construction
 
   constructor(
     renderer: IRenderer,
@@ -94,12 +95,31 @@ export class GameEngine {
     }
   }
 
+  canPlace(defId: string, x: number, y: number): boolean {
+    const tile = this.state.island.tiles[y]?.[x];
+    if (!tile || tile.buildings.length) return false;
+    const t = tile.terrain;
+
+    if (defId === 'port') {
+      // shallow_water + au moins 1 voisin terre
+      if (t !== 'shallow_water') return false;
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nt = this.state.island.tiles[y+dy]?.[x+dx]?.terrain;
+        if (nt && nt !== 'deep_water' && nt !== 'shallow_water') return true;
+      }
+      return false;
+    }
+    // Par défaut : n'importe quelle tuile terrestre
+    return t !== 'deep_water' && t !== 'shallow_water';
+  }
+
   placeBuilding(defId: string, x: number, y: number): BuildingInstance | null {
+    if (!this.canPlace(defId, x, y)) return null;
     const def = this.buildingDefs.find(d => d.id === defId);
     if (!def) return null;
-    const tile = this.state.island.tiles[y]?.[x];
-    if (!tile || tile.buildings.length) return null;
+    const tile = this.state.island.tiles[y]![x]!;
 
+    const anchor = defId === 'port' ? 'stilts' as const : 'ground' as const;
     const instance: BuildingInstance = {
       id: `${defId}_${x}_${y}_${Date.now()}`,
       defId,
@@ -107,14 +127,12 @@ export class GameEngine {
       gridX: x,
       gridY: y,
       stackLevel: 0,
-      anchor: 'ground',
-      constructionProgress: 0,
-      operational: false,
+      anchor,
+      constructionProgress: 1,
+      operational: true,
     };
     tile.buildings.push(instance);
     this.state.buildings.set(instance.id, instance);
-
-    // Redessiner juste cette tuile
     this.renderer.renderBuilding(tile);
     return instance;
   }

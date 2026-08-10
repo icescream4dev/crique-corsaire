@@ -2,10 +2,7 @@ import { Application, Container, Graphics } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
-const TS = 16; // tile size
-const ZS = 0.08; // zoom step
-const ZMIN = 0.2; const ZMAX = 3.0;
-
+const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 3.0;
 const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
 
 export class PixiRenderer implements IRenderer {
@@ -16,7 +13,6 @@ export class PixiRenderer implements IRenderer {
   private cx = 0; private cy = 0; private zm = 1;
   private ww = 0; private wh = 0;
   private ct!: HTMLElement;
-
   private drag = false;
   private dsx=0; private dsy=0; private dcx=0; private dcy=0;
   private pd=0; private pz=1;
@@ -38,11 +34,9 @@ export class PixiRenderer implements IRenderer {
 
   private at(cx:number, cy:number, nz:number) {
     nz = Math.max(ZMIN, Math.min(ZMAX, nz));
-    const wx = (cx - this.cx) / this.zm;
-    const wy = (cy - this.cy) / this.zm;
+    const wx = (cx - this.cx) / this.zm, wy = (cy - this.cy) / this.zm;
     this.zm = nz;
-    this.cx = cx - wx * nz;
-    this.cy = cy - wy * nz;
+    this.cx = cx - wx * nz; this.cy = cy - wy * nz;
   }
 
   private clamp() {
@@ -65,13 +59,9 @@ export class PixiRenderer implements IRenderer {
     c.addEventListener('touchmove', (e:TouchEvent) => { e.preventDefault();
       if(e.touches.length===1&&this.drag){ this.cx=this.dcx+(e.touches[0].clientX-this.dsx); this.cy=this.dcy+(e.touches[0].clientY-this.dsy); this.clamp(); }
       else if(e.touches.length===2){
-        const t0=e.touches[0], t1=e.touches[1];
-        const mx=(t0.clientX+t1.clientX)/2, my=(t0.clientY+t1.clientY)/2;
+        const t0=e.touches[0], t1=e.touches[1], mx=(t0.clientX+t1.clientX)/2, my=(t0.clientY+t1.clientY)/2;
         const d=Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
-        const nz=Math.max(ZMIN, Math.min(ZMAX, this.pz*(d/this.pd)));
-        // Coordonnées canvas via offsetX du conteneur
-        const r = this.rect;
-        this.at(mx-r.left, my-r.top, nz);
+        this.at(mx-this.rect.left, my-this.rect.top, Math.max(ZMIN, Math.min(ZMAX, this.pz*(d/this.pd))));
         this.pz=this.zm; this.pd=d;
       }
     }, {passive:false});
@@ -80,9 +70,7 @@ export class PixiRenderer implements IRenderer {
   }
 
   update(_dt:number) {
-    this.world.scale.set(this.zm);
-    this.world.x = this.cx;
-    this.world.y = this.cy;
+    this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
     const h = document.getElementById('hud');
     if (h) h.textContent = `sw:${Math.round(this.sw)} sh:${Math.round(this.sh)} cam:${Math.round(this.cx)},${Math.round(this.cy)} zm:${this.zm.toFixed(2)} wld:${this.ww}x${this.wh}`;
   }
@@ -96,9 +84,32 @@ export class PixiRenderer implements IRenderer {
   }
 
   renderTile(t:Tile){ if(!this.cache[t.y])this.cache[t.y]=[]; if(this.cache[t.y][t.x])return; const g=new Graphics(); g.rect(t.x*TS,t.y*TS,TS,TS); g.fill(C[t.terrain]??0x333333); g.stroke({width:.5,color:0,alpha:.1}); this.tiles.addChild(g); this.cache[t.y][t.x]=g; }
-  renderBuilding(t:Tile){ if(!t.buildings.length)return; const b=t.buildings[0]; const g=new Graphics(); const x=b.gridX*TS+1, y=b.gridY*TS-b.stackLevel*6+1; g.rect(x,y,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0}); g.rect(x,y,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444); this.blds.addChild(g); }
-  renderPirate(p:{x:number;y:number;emoji:string}){void p;}
+
+  renderBuilding(t:Tile){ if(!t.buildings.length)return; const b=t.buildings[0]; const g=new Graphics(); const bx=b.gridX*TS, by=b.gridY*TS;
+    if(b.defId==='port'){
+      g.rect(bx+1,by+6,14,3); g.fill(0x8b6914); g.rect(bx+1,by+10,14,3); g.fill(0x8b6914);
+      g.rect(bx+1,by+14,14,3); g.fill(0x8b6914); g.rect(bx+1,by+2,14,3); g.fill(0x8b6914);
+      g.rect(bx+2,by,2,16); g.fill(0x5c3a0a); g.rect(bx+12,by,2,16); g.fill(0x5c3a0a);
+      g.rect(bx+8,by-10,1,12); g.fill(0x333);
+      g.rect(bx+9,by-10,6,5); g.fill(0x111); g.stroke({width:1,color:0x666});
+      g.rect(bx+10,by-8,2,2); g.fill(0xeee);
+    }else{
+      g.rect(bx+1,by+1,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0});
+      g.rect(bx+1,by+1,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444);
+    }
+    this.blds.addChild(g);
+  }
+
+  getTileAt(sx:number, sy:number): {x:number;y:number}|null {
+    const r = this.rect;
+    const wx = (sx - r.left - this.cx) / this.zm;
+    const wy = (sy - r.top - this.cy) / this.zm;
+    const tx = Math.floor(wx / TS), ty = Math.floor(wy / TS);
+    if (tx < 0 || tx >= this.ww || ty < 0 || ty >= this.wh) return null;
+    return { x: tx, y: ty };
+  }
+
   clear(){ this.cache=[]; this.tiles.removeChildren(); this.blds.removeChildren(); }
   onResize(){ this.update(0); }
-  getTileAt(x:number,y:number){ const r=this.rect; return {x:Math.floor((x-r.left-this.cx)/this.zm/TS), y:Math.floor((y-r.top-this.cy)/this.zm/TS)}; }
+  renderPirate(_p:{x:number;y:number;emoji:string}){}
 }

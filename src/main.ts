@@ -1,5 +1,5 @@
 // ============================================================
-// MAIN — Point d'entrée. Assemble les adapters et lance le jeu.
+// MAIN — Point d'entrée.
 // ============================================================
 
 import { GameEngine } from './engine/game-engine';
@@ -13,32 +13,31 @@ async function main() {
   const container = document.getElementById('game-container');
   if (!container) throw new Error('Missing #game-container');
 
-  const engine = new GameEngine(
-    new PixiRenderer(),
-    new IndexedDBStore(),
-    new SimpleIslandGenerator(),
-    new JsonDataLoader(),
-  );
+  const renderer = new PixiRenderer();
+  const engine = new GameEngine(renderer, new IndexedDBStore(), new SimpleIslandGenerator(), new JsonDataLoader());
 
-  // Gérer le clic pour poser un bâtiment (placeholder)
+  // Clic sur la carte → poser le bâtiment sélectionné
   container.addEventListener('click', (e) => {
-    const rect = container.getBoundingClientRect();
-    if (e.shiftKey) {
-      const tx = e.clientX - rect.left;
-      const ty = e.clientY - rect.top;
-      console.log(`Click at tile: ${Math.floor(tx / 32)}, ${Math.floor(ty / 32)}`);
+    if (!engine.selectedBuilding) return;
+    const tile = renderer.getTileAt(e.clientX, e.clientY);
+    if (tile) {
+      const ok = engine.placeBuilding(engine.selectedBuilding, tile.x, tile.y);
+      if (ok) {
+        document.querySelectorAll('#toolbar button').forEach(b => ((b as HTMLElement).style.outline = 'none'));
+        engine.selectedBuilding = null;
+      }
     }
   });
 
   await engine.init(container, Date.now());
 
-  // Exposer pour debug
   (window as any).gameEngine = engine;
-  console.log('🏴‍☠️ Crique Corsaire — engine ready');
 
-  // Bouton régénération
-  document.getElementById('btn-regenerate')?.addEventListener('click', () => {
-    engine.regenerate();
+  document.getElementById('btn-regenerate')?.addEventListener('click', () => engine.regenerate());
+  document.getElementById('btn-port')?.addEventListener('click', () => {
+    engine.selectedBuilding = engine.selectedBuilding === 'port' ? null : 'port';
+    const btn = document.getElementById('btn-port');
+    if (btn) btn.style.outline = engine.selectedBuilding === 'port' ? '2px solid #ff0' : 'none';
   });
 }
 
