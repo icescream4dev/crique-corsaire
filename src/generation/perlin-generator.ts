@@ -40,6 +40,9 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     const M = 4;
     const totalTiles = (w - M * 2) * (h - M * 2);
 
+    // Décision archipel AVANT la boucle (indépendant de attempt)
+    const archipelago = hash(1, 0, seed) < 0.5;
+
     // Boucle de retry pour la couverture
     let attempt = 0;
     let bestIslands: IslandSeed[] = [];
@@ -47,7 +50,7 @@ export class SimpleIslandGenerator implements IWorldGenerator {
 
     while (attempt < 20) {
       const rng = (i: number) => hash(i, attempt, seed);
-      const islands = this.placeIslands(w, h, M, rng);
+      const islands = this.placeIslands(w, h, M, archipelago, rng);
       const { tiles: genTiles, isLand: genLand } = this.buildTerrain(w, h, M, islands, seed, attempt);
       const coverage = this.countLand(genLand, M, w, h) / totalTiles;
 
@@ -116,9 +119,9 @@ export class SimpleIslandGenerator implements IWorldGenerator {
   }
 
   // --- Placement des îles avec contrainte de proximité ---
-  private placeIslands(w: number, h: number, M: number, rng: (i: number) => number): IslandSeed[] {
+  private placeIslands(w: number, h: number, M: number, archipelago: boolean, rng: (i: number) => number): IslandSeed[] {
     const maxR = Math.min(w, h) * 0.22;
-    const n = rng(1) < 0.5 ? Math.floor(rng(2) * 4) + 2 : Math.floor(rng(2) * 2) + 1;
+    const n = archipelago ? Math.floor(rng(2) * 4) + 2 : Math.floor(rng(2) * 2) + 1;
     const seeds: IslandSeed[] = [];
 
     for (let i = 0; i < n; i++) {
