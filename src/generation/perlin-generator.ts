@@ -1,11 +1,10 @@
 // ============================================================
-// GÉNÉRATEUR PROCÉDURAL — Îles, archipels, criques, falaises.
+// GÉNÉRATEUR PROCÉDURAL — Archipels, criques, fjords, falaises.
 // ============================================================
 
 import type { IWorldGenerator, GenerationParams } from '../core/ports';
 import type { IslandData, Tile, TerrainType } from '../core/types';
 
-// --- Noise functions ---
 function hash(x: number, y: number, seed: number): number {
   const n = Math.sin(x * 127.1 + y * 311.7 + seed * 73.19) * 43758.5453;
   return n - Math.floor(n);
@@ -14,103 +13,65 @@ function hash(x: number, y: number, seed: number): number {
 function smoothNoise(x: number, y: number, seed: number): number {
   const ix = Math.floor(x), iy = Math.floor(y);
   const fx = x - ix, fy = y - iy;
-  const sx = fx * fx * (3 - 2 * fx); // smoothstep
-  const sy = fy * fy * (3 - 2 * fy);
-  const tl = hash(ix, iy, seed);
-  const tr = hash(ix + 1, iy, seed);
-  const bl = hash(ix, iy + 1, seed);
-  const br = hash(ix + 1, iy + 1, seed);
-  const t = tl + (tr - tl) * sx;
-  const b = bl + (br - bl) * sx;
-  return t + (b - t) * sy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const tl = hash(ix, iy, seed), tr = hash(ix + 1, iy, seed);
+  const bl = hash(ix, iy + 1, seed), br = hash(ix + 1, iy + 1, seed);
+  return tl + (tr - tl) * sx + (bl - tl) * sy + (tl - tr - bl + br) * sx * sy;
 }
 
-function fbm(x: number, y: number, seed: number, octaves: number, lacunarity: number, gain: number): number {
-  let value = 0, amplitude = 1, frequency = 1, max = 0;
+function fbm(x: number, y: number, seed: number, octaves: number): number {
+  let v = 0, a = 1, f = 1, m = 0;
   for (let i = 0; i < octaves; i++) {
-    value += amplitude * smoothNoise(x * frequency, y * frequency, seed + i * 7919);
-    max += amplitude;
-    amplitude *= gain;
-    frequency *= lacunarity;
+    v += a * smoothNoise(x * f, y * f, seed + i * 7919);
+    m += a; a *= 0.55; f *= 2.0;
   }
-  return value / max;
+  return v / m;
 }
 
-// --- Island shape functions ---
-type IslandShape = {
-  cx: number; cy: number;
-  rx: number; ry: number;  // rayons X/Y (ellipse)
-  rotation: number;         // radians
-  shapeNoise: number;       // 0 = parfait, 0.5 = très déformé
-  cliffBias: number;        // 0-1, probabilité de falaises
-};
+// --- Landmass shapes ---
+interface Shape {
+  cx: number; cy: number; rx: number; ry: number;
+  rotation: number; coastNoise: number;
+}
 
-function generateShapes(w: number, h: number, seed: number): IslandShape[] {
+function generateShapes(w: number, h: number, seed: number): Shape[] {
   const rng = (n: number) => hash(n, 0, seed);
-  const count = rng(1) < 0.25 ? Math.floor(rng(2) * 4) + 2  // 25% archipel (2-5 îles)
-    : rng(1) < 0.5 ? 1 : 1;  // 50% une île, 25% aussi une île
-
-  const shapes: IslandShape[] = [];
-  const maxR = Math.min(w, h) * 0.45;
+  const count = rng(1) < 0.3 ? Math.floor(rng(2) * 4) + 2 : 1;
+  const shapes: Shape[] = [];
+  const maxR = Math.min(w, h) * 0.35;
+  const margin = 6; // bordure d'eau obligatoire
 
   for (let i = 0; i < count; i++) {
-    const cx = w * 0.2 + rng(i * 3 + 1) * w * 0.6;
-    const cy = h * 0.2 + rng(i * 3 + 2) * h * 0.6;
-    const baseR = maxR * (0.3 + rng(i * 3 + 3) * 0.7);
-    // Ratio d'aspect variable (allongé ou rond)
-    const aspectRatio = 0.4 + rng(i * 3 + 4) * 1.2;
+    // Position contrainte : marge de 6 tuiles sur chaque bord
+    const minX = margin + maxR * 1.1;
+    const maxX = w - margin - maxR * 1.1;
+    const minY = margin + maxR * 1.1;
+    const maxY = h - margin - maxR * 1.1;
+    const cx = Math.max(minX, Math.min(maxX, w * 0.2 + rng(i * 3 + 1) * w * 0.6));
+    const cy = Math.max(minY, Math.min(maxY, h * 0.2 + rng(i * 3 + 2) * h * 0.6));
+    const baseR = maxR * (0.25 + rng(i * 3 + 3) * 0.75);
     const rx = baseR;
-    const ry = baseR * aspectRatio;
+    const ry = baseR * (0.5 + rng(i * 3 + 4) * 1.0);
     const rotation = rng(i * 3 + 5) * Math.PI;
-    const shapeNoise = 0.1 + rng(i * 3 + 6) * 0.8; // déformation de la côte
-    const cliffBias = 0.1 + rng(i * 3 + 7) * 0.6;
-
-    shapes.push({ cx, cy, rx, ry, rotation, shapeNoise, cliffBias });
+    const coastNoise = 0.3 + rng(i * 3 + 6) * 0.6;
+    shapes.push({ cx, cy, rx, ry, rotation, coastNoise });
   }
-
   return shapes;
 }
 
-function isLand(x: number, y: number, shapes: IslandShape[], seed: number): { land: boolean; shapeIdx: number } {
-  let bestDist = Infinity;
-  let bestIdx = -1;
-  for (let i = 0; i < shapes.length; i++) {
-    const s = shapes[i];
-    // Transformer le point dans l'espace de l'ellipse
+// Distance normalisée au centre du shape le plus proche
+function distToShapes(x: number, y: number, shapes: Shape[]): number {
+  let best = Infinity;
+  for (const s of shapes) {
     const dx = x - s.cx, dy = y - s.cy;
     const cos = Math.cos(-s.rotation), sin = Math.sin(-s.rotation);
-    const rx = dx * cos - dy * sin;
-    const ry = dx * sin + dy * cos;
-    // Distance normalisée dans l'ellipse
-    const nd = Math.sqrt((rx / s.rx) ** 2 + (ry / s.ry) ** 2);
-    // Ajouter du bruit à la côte pour les criques et formes irrégulières
-    const coastNoise = fbm(x * 2.5, y * 2.5, seed + 42, 3, 2.0, 0.5) * s.shapeNoise;
-    const effectiveDist = nd - coastNoise;
-    if (effectiveDist < bestDist) {
-      bestDist = effectiveDist;
-      bestIdx = i;
-    }
+    const rx = dx * cos - dy * sin, ry = dx * sin + dy * cos;
+    const d = Math.sqrt((rx / s.rx) ** 2 + (ry / s.ry) ** 2);
+    if (d < best) best = d;
   }
-  return { land: bestDist < 0.9, shapeIdx: bestIdx };
+  return best;
 }
 
-function terrainType(elevation: number, distanceToShore: number, shapes: IslandShape[], shapeIdx: number): TerrainType {
-  // Montagnes/falaises près de l'eau ?
-  const cliffBias = shapeIdx >= 0 ? shapes[shapeIdx].cliffBias : 0.3;
-
-  if (elevation < -0.05) return 'water';
-  if (elevation < 0.02) return 'sand'; // plage
-
-  // Proche de l'eau + montagneux → falaises
-  if (distanceToShore < 3 && elevation > 0.5 + (1 - cliffBias) * 0.4) return 'cliff';
-  if (distanceToShore < 2 && elevation > 0.65) return 'cliff_face';
-
-  if (elevation < 0.45) return 'grass';
-  if (elevation < 0.7) return 'rock';
-  return 'cliff';
-}
-
-// --- Main generator ---
 export class SimpleIslandGenerator implements IWorldGenerator {
   generate(seed: number, params?: GenerationParams): IslandData {
     const w = params?.width ?? 80;
@@ -123,38 +84,63 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     const cliffFaces: { x: number; y: number; direction: 'n' | 's' | 'e' | 'w' }[] = [];
     const resources: { x: number; y: number; resource: string; amount: number }[] = [];
 
-    // Pass 1 : calculer l'élévation pour chaque tuile
-    const elevations: number[][] = [];
-    const landStatus: boolean[][] = [];
-    const shapeIdx: number[][] = [];
-    const shoreDist: number[][] = []; // distance au rivage (en tuiles)
+    // Pré-calculer l'élévation, le type de terrain, et la distance au rivage
+    const elev: number[][] = [];
+    const land: boolean[][] = [];
+    const shoreDist: number[][] = [];
 
     for (let y = 0; y < h; y++) {
-      elevations[y] = [];
-      landStatus[y] = [];
-      shapeIdx[y] = [];
-      shoreDist[y] = [];
+      elev[y] = []; land[y] = []; shoreDist[y] = [];
       for (let x = 0; x < w; x++) {
-        const { land, shapeIdx: si } = isLand(x, y, shapes, seed);
-        landStatus[y][x] = land;
-        shapeIdx[y][x] = si;
-        // Élévation basée sur FBM + distance au centre de l'île
-        const baseElev = fbm(x * 0.04, y * 0.04, seed + 999, 5, 2.0, 0.55);
-        elevations[y][x] = land ? baseElev : -0.3;
-        shoreDist[y][x] = 999;
+        // Vérifier que le point est dans les marges
+        const margin = 4;
+        if (x < margin || x >= w - margin || y < margin || y >= h - margin) {
+          elev[y][x] = -0.5; land[y][x] = false; shoreDist[y][x] = 0;
+          continue;
+        }
+
+        const baseDist = distToShapes(x, y, shapes);
+        const shapeIdx = shapes.reduce((best, s, i) => {
+          const dx = x - s.cx, dy = y - s.cy;
+          const cos = Math.cos(-s.rotation), sin = Math.sin(-s.rotation);
+          const rx = dx * cos - dy * sin, ry = dx * sin + dy * cos;
+          const d = Math.sqrt((rx / s.rx) ** 2 + (ry / s.ry) ** 2);
+          return d < best.d ? { d, i } : best;
+        }, { d: Infinity, i: -1 });
+        const s = shapes[shapeIdx.i];
+
+        // Bruit de côte (criques, fjords)
+        const coastNoise = fbm(x * 2.0, y * 2.0, seed + 42, 4);
+        // Bruit de fjord (pénétration d'eau dans les terres)
+        const fjordNoise = fbm(x * 1.5, y * 1.5, seed + 777, 3);
+        // Combiner : le fjord crée des bras de mer quand la distance est entre 0.8 et 1.1
+        const fjordFactor = fjordNoise > 0.55 && baseDist < 1.2 && baseDist > 0.5 ? 2.0 : 1.0;
+        const effectiveDist = baseDist - coastNoise * s.coastNoise * fjordFactor;
+
+        const isLand = effectiveDist < 0.95;
+        land[y][x] = isLand;
+
+        if (isLand) {
+          // Élévation intérieure
+          const baseElev = fbm(x * 0.05, y * 0.05, seed + 999, 5);
+          elev[y][x] = baseElev;
+        } else {
+          elev[y][x] = -0.3;
+        }
+        shoreDist[y][x] = isLand ? 999 : 0;
       }
     }
 
-    // Pass 2 : calculer la distance au rivage
-    for (let pass = 0; pass < 4; pass++) {
+    // Distance au rivage (par propagation)
+    for (let pass = 0; pass < 6; pass++) {
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-          if (!landStatus[y][x]) { shoreDist[y][x] = 0; continue; }
+          if (!land[y][x]) { shoreDist[y][x] = 0; continue; }
           let minD = shoreDist[y][x];
-          for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
             const nx = x + dx, ny = y + dy;
             if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-              if (!landStatus[ny][nx]) { minD = 1; break; }
+              if (!land[ny][nx]) { minD = 1; break; }
               if (shoreDist[ny][nx] + 1 < minD) minD = shoreDist[ny][nx] + 1;
             }
           }
@@ -163,38 +149,55 @@ export class SimpleIslandGenerator implements IWorldGenerator {
       }
     }
 
-    // Pass 3 : construire les tuiles
+    // Construire les tuiles
     for (let y = 0; y < h; y++) {
       tiles[y] = [];
       for (let x = 0; x < w; x++) {
-        const land = landStatus[y][x];
-        const elev = elevations[y][x];
+        const isLand = land[y][x];
+        const elevation = elev[y][x];
         const dShore = shoreDist[y][x];
-        const terrain = land
-          ? terrainType(elev, dShore, shapes, shapeIdx[y][x])
-          : 'water';
+        let terrain: TerrainType;
+        let height: number;
 
-        const height = land ? Math.max(1, Math.floor(elev * 5)) : 0;
+        if (!isLand) {
+          terrain = 'water';
+          height = 0;
+        } else {
+          height = Math.max(1, Math.floor(elevation * 5));
+
+          // Plage : proche de l'eau (< 3 tuiles) et pas trop pentu
+          if (dShore <= 2 && elevation < 0.35) {
+            terrain = 'sand';
+          }
+          // Falaise côtière : proche de l'eau et pentu
+          else if (dShore <= 3 && elevation > 0.5) {
+            terrain = dShore <= 2 ? 'cliff_face' : 'cliff';
+          }
+          // Intérieur des terres
+          else if (elevation < 0.45) {
+            terrain = 'grass';
+          } else if (elevation < 0.7) {
+            terrain = 'rock';
+          } else {
+            terrain = 'cliff';
+          }
+        }
 
         tiles[y][x] = { x, y, terrain, height, stack: [], building: undefined };
-
-        // Shore points
         if (terrain === 'sand') shorePoints.push({ x, y });
-        // Cliff faces (where cliff meets non-cliff)
         if (terrain === 'cliff' || terrain === 'cliff_face') {
-          const dirs: Array<'n'|'s'|'e'|'w'> = ['n','s','e','w'];
-          cliffFaces.push({ x, y, direction: dirs[Math.floor(hash(x,y,seed+500)*4)] });
+          cliffFaces.push({ x, y, direction: (['n', 's', 'e', 'w'] as const)[Math.floor(hash(x, y, seed + 500) * 4)] });
         }
       }
     }
 
-    // Ressources naturelles
-    const resourceTypes = ['bois_flotte', 'algues_rares', 'pierre', 'fer_raille', 'sable_fin'];
+    // Ressources
+    const rTypes = ['bois_flotte', 'algues_rares', 'pierre', 'fer_raille', 'sable_fin'];
     for (let i = 0; i < Math.floor(20 * richness); i++) {
       const rx = Math.floor(hash(i, 0, seed + 777) * w);
       const ry = Math.floor(hash(i, 1, seed + 777) * h);
       if (rx < w && ry < h && tiles[ry][rx].terrain !== 'water') {
-        resources.push({ x: rx, y: ry, resource: resourceTypes[i % resourceTypes.length], amount: Math.floor(hash(i, 2, seed + 777) * 50) + 10 });
+        resources.push({ x: rx, y: ry, resource: rTypes[i % rTypes.length], amount: Math.floor(hash(i, 2, seed + 777) * 50) + 10 });
       }
     }
 
