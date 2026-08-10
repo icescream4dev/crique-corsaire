@@ -50,25 +50,32 @@ Attirer et retenir des pirates sur l'île en construisant une ville belle et fon
 
 ## Bâtiments
 
-Tous les bâtiments sont **évolutifs** (arbre d'amélioration) avec micro-management spécifique.
+> **Catalogue complet** : voir [`design/catalogue-batiments.md`](catalogue-batiments.md)
+> — 30+ bâtiments détaillés avec niveaux d'évolution, ressources, et chaînes économiques.
 
-### Types de bâtiments (liste non exhaustive)
+Tous les bâtiments sont **évolutifs** (arbre d'amélioration 5 niveaux) avec micro-management spécifique.
 
-| Bâtiment | Service |
+### Catégories
+
+| Catégorie | Bâtiments clés |
 |---|---|
-| Bar / taverne | Rhum et racontars |
-| Salon de massage pour membres amputés | Bien-être des unijambistes |
-| Thermes aux algues rares | Enveloppement de luxe |
-| Bains de doublons | Bain de pièces d'or |
-| Marchand de cartes au trésor | Aventure et exploration |
-| Décorateur de jambes de bois | Personnalisation de prothèses |
-| Éleveur de malédictions | Malédictions à façon |
-| Institut de beauté | Épilation pirate → poils → étuis |
-| **Bâtiment anachronique** | Inventions "électriques" / steampunk → déblocage technos |
+| 🍺 Tavernes & Vices | Taverne "Le Rat Qui Louche" |
+| 💆 Soins & Bien-Être | Institut de Beauté, Salon de Massage, Thermes, Bains de Doublons |
+| 🔧 Artisanat & Équipement | Maroquinier, Ferronnerie, Tonnellerie, Décorateur de Crochets/Jambes de Bois, Cartes |
+| 🔮 Mystique & Surnaturel | Éleveur de Malédictions, Temple de Poséidon, Attrapeur de Rêves |
+| ⚓ Port & Maritime | Port, Voiturier de Galions, Phare |
+| 🎭 Culture & Divertissement | Chants de Marins, Théâtre de Marionnettes, Zoo Marin, Musée |
+| ⚡ Anachronique | Labo Nemo (électricité/steampunk), Imprimerie, Taxidermie |
+| 🏚️ Logement | Baraquements (capacité de population) |
 
-### Port
-- Hub central évolutif
-- Services annexes à débloquer (ex : voiturier pour galions = valet parking naval)
+### Chaînes économiques documentées
+- **Crochet de Luxe** : Ferronnerie → Décorateur de Crochets → Institut de Beauté → Maroquinier → Crochet Légendaire
+- **Jambe de Contrebande** : Décorateur de Jambes → marqueterie → nacre → compartiment secret → prothèse suisse
+- **Cure de Jouvence** : Algues → Thermes → Bave d'escargot → Larme de sirène
+- **Rhum Éternel** : Taverne → Tonnellerie → Distillerie → Rhum-carburant (Labo Nemo)
+
+### Types de pirates
+7 segments de population avec besoins spécifiques : Boucaniers, Flibustiers, Corsaires, Forbans, Marchands, Artistes, Savants Fous.
 
 ---
 
