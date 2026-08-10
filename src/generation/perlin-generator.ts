@@ -16,9 +16,11 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     const W=params?.width??80,H=params?.height??50,R=params?.resourceRichness??0.5;
     const M=2,nI=10+Math.floor(hh(1,0,seed)*6); // 10-15 îles
     const isles:I[]=[];
-    const maxR=Math.min(W,H)*.10,zx=W-M*2-maxR*2,zy=H-M*2-maxR*2;
-    isles.push({cx:M+maxR+hh(2,0,seed)*zx,cy:M+maxR+hh(3,0,seed)*zy,rx:maxR*(.85+hh(4,0,seed)*.45),ry:maxR*(.55+hh(5,0,seed)*.65),rot:hh(6,0,seed)*Math.PI*2,amp:.4+hh(7,0,seed)*.4});
-    for(let i=1;i<nI;i++){const ri=maxR*(.7+hh(i*17,0,seed)*.6);let ok=false;for(let a=0;a<100&&!ok;a++){const ref=isles[Math.floor(hh(i*13+a,0,seed)*isles.length)],ang=hh(i*13+a+1,0,seed)*Math.PI*2,gap=4+hh(i*13+a+2,0,seed)*4,cx=ref.cx+Math.cos(ang)*(ref.rx+ri+gap),cy=ref.cy+Math.sin(ang)*(ref.rx+ri+gap);if(cx<M+ri||cx>W-M-ri||cy<M+ri||cy>H-M-ri)continue;let ov=false;for(const s of isles)if(Math.hypot(cx-s.cx,cy-s.cy)<s.rx+ri+2){ov=true;break}if(!ov){isles.push({cx,cy,rx:ri,ry:ri*(.55+hh(i*17+a+1,0,seed)*.7),rot:hh(i*17+a+2,0,seed)*Math.PI*2,amp:.35+hh(i*17+a+3,0,seed)*.45});ok=true}}}
+    const maxR=Math.min(W,H)*.10;
+    // Toutes les îles orbitent autour du centre du cluster
+    const clusterCX=W/2, clusterCY=H/2, clusterR=Math.min(W,H)*.35;
+    isles.push({cx:clusterCX+hh(2,0,seed)*clusterR-clusterR/2,cy:clusterCY+hh(3,0,seed)*clusterR-clusterR/2,rx:maxR*(.85+hh(4,0,seed)*.45),ry:maxR*(.55+hh(5,0,seed)*.65),rot:hh(6,0,seed)*Math.PI*2,amp:.4+hh(7,0,seed)*.4});
+    for(let i=1;i<nI;i++){const ri=maxR*(.7+hh(i*17,0,seed)*.6);let ok=false;for(let a=0;a<100&&!ok;a++){const ang=hh(i*13+a,0,seed)*Math.PI*2,dist=hh(i*13+a+1,0,seed)*clusterR,cx=clusterCX+Math.cos(ang)*dist,cy=clusterCY+Math.sin(ang)*dist;if(cx<M+ri||cx>W-M-ri||cy<M+ri||cy>H-M-ri)continue;let ov=false;for(const s of isles)if(Math.hypot(cx-s.cx,cy-s.cy)<s.rx+ri+2){ov=true;break}if(!ov){isles.push({cx,cy,rx:ri,ry:ri*(.55+hh(i*17+a+1,0,seed)*.7),rot:hh(i*17+a+2,0,seed)*Math.PI*2,amp:.35+hh(i*17+a+3,0,seed)*.45});ok=true}}}
 
     // 1. Masque terre/eau binaire
     const land:boolean[][]=[],T:Tile[][]=[];
