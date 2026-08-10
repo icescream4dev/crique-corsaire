@@ -78,8 +78,8 @@ export class PixiRenderer implements IRenderer {
     if(!t.buildings.length)return; const b=t.buildings[0]; const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
       const s=Sprite.from('/ponton-pirate.png');
-      s.x=bx-8; s.y=by-12; // centrer le sprite 48×64 sur la tuile
-      s.scale.set(0.5); // 48×64 → 24×32 sur 16²
+      s.x=bx-56; s.y=by-50; // centrer le sprite 128x96 → le quai à la tuile
+      s.scale.set(1/3); // 128×96 → ~43×32
       this.blds.addChild(s);
     }else{
       const g=new Graphics();
