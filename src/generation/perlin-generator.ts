@@ -51,11 +51,27 @@ export class SimpleIslandGenerator implements IWorldGenerator {
       islands.push(il);
     }
 
-    // 4b. Connecter les îles proches par de l'eau peu profonde
-    for(let i=0;i<islands.length;i++)for(let j=i+1;j<islands.length;j++){
-      let md=Infinity,ba:[number,number]=[0,0],bb:[number,number]=[0,0];
-      for(const[ax,ay]of islands[i])for(const[bx,by]of islands[j]){const d=Math.abs(ax-bx)+Math.abs(ay-by);if(d<md){md=d;ba=[ax,ay];bb=[bx,by]}}
-      if(md<=5){let x=ba[0],y=ba[1];const dx=Math.sign(bb[0]-ba[0]),dy=Math.sign(bb[1]-ba[1]);while(x!==bb[0]||y!==bb[1]){if(!land[y]?.[x])T[y][x].terrain='shallow_water';if(x!==bb[0])x+=dx;if(y!==bb[1])y+=dy;}}
+    // 4b. Connecter TOUTES les îles en un seul archipel (arbre couvrant minimum)
+    if(islands.length>1){
+      // Construire le graphe : distance entre chaque paire d'îles
+      const edges:{i:number,j:number,d:number,ai:[number,number],aj:[number,number]}[]=[];
+      for(let i=0;i<islands.length;i++)for(let j=i+1;j<islands.length;j++){
+        let md=Infinity,ba:[number,number]=[0,0],bb:[number,number]=[0,0];
+        for(const[ax,ay]of islands[i])for(const[bx,by]of islands[j]){const d=Math.abs(ax-bx)+Math.abs(ay-by);if(d<md){md=d;ba=[ax,ay];bb=[bx,by]}}
+        edges.push({i,j,d:md,ai:ba,aj:bb});
+      }
+      // Kruskal simplifié : prendre les plus courtes arêtes
+      edges.sort((a,b)=>a.d-b.d);
+      const parent=new Array(islands.length).fill(0).map((_,i)=>i);
+      const find=(x:number):number=>parent[x]===x?x:parent[x]=find(parent[x]);
+      for(const e of edges){
+        if(find(e.i)!==find(e.j)){
+          parent[find(e.i)]=find(e.j);
+          // Tracer un chemin d'eau peu profonde
+          let x=e.ai[0],y=e.ai[1];const dx=Math.sign(e.aj[0]-e.ai[0]),dy=Math.sign(e.aj[1]-e.ai[1]);
+          while(x!==e.aj[0]||y!==e.aj[1]){if(!land[y]?.[x])T[y][x].terrain='shallow_water';if(x!==e.aj[0])x+=dx;if(y!==e.aj[1])y+=dy;}
+        }
+      }
     }
 
     // 5. Pour chaque île : supprimer les micro-îles (<3px), assigner terrain aux autres
