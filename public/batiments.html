@@ -44,9 +44,13 @@ let buildings = [];
 try {
   const resp = await fetch('/data/buildings/port.json');
   buildings = [await resp.json()];
-  // TODO: charger tous les JSON du dossier
 } catch(e) {
   list.textContent = 'Erreur: ' + e.message;
+}
+
+// Ajouter les tilesets d'eau à la liste
+buildings.push({ id:'seabed', name:'Fond marin', emoji:'🏖️', description:'Tileset isométrique 114×114', levels:[{displayName:'15 tuiles 3×5'}], spritePath:'/sprites/seabed.png' });
+buildings.push({ id:'water_deep', name:'Eau profonde', emoji:'🌊', description:'Overlay semi-transparent 114×114', levels:[{displayName:'15 tuiles 3×5'}], spritePath:'/sprites/water_deep.png' });
 }
 
 // Sprite cache
@@ -68,17 +72,22 @@ for (const bld of buildings) {
     info.textContent = `Chargement de ${bld.name}...`;
     
     // Determine sprite path
-    const spritePath = `/sprites/${bld.id}.png`; // par convention
-    const fallbackPath = `/ponton-pirate.png`; // fallback pour le port
+    const spritePath = bld.spritePath || `/sprites/${bld.id}.png`;
+    const fallbackPath = `/ponton-pirate.png`;
     
     let tex = texCache.get(bld.id);
     if (!tex) {
       try {
-        tex = await Assets.load(fallbackPath); // utiliser le sprite existant
+        tex = await Assets.load(spritePath);
         texCache.set(bld.id, tex);
       } catch {
-        info.textContent = `❌ Impossible de charger le sprite pour ${bld.name}`;
-        return;
+        try {
+          tex = await Assets.load(fallbackPath);
+          texCache.set(bld.id, tex);
+        } catch {
+          info.textContent = `❌ Impossible de charger le sprite pour ${bld.name}`;
+          return;
+        }
       }
     }
     
