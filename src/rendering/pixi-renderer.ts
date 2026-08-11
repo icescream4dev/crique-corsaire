@@ -1,20 +1,41 @@
-import { Application, Container, Graphics, Sprite, Assets, Texture } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets, Texture, TilingSprite } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
 const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 24;
 const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
 
+/** Génère une texture d'eau animée (pixel art, palette cycling-like) */
+function makeWaterTexture(frame: number, color1: number, color2: number, size: number): Texture {
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#' + color1.toString(16).padStart(6, '0');
+  ctx.fillRect(0, 0, size, size);
+  // Bandes de vagues pixel art
+  for (let y = 0; y < size; y++) {
+    const wave = Math.sin((y + frame * 1.5) * 0.6) * 2 + Math.sin((y + frame * 2) * 0.35) * 3;
+    for (let x = 0; x < size; x++) {
+      if ((x + Math.floor(wave) + y) % 3 === 0) {
+        ctx.fillStyle = '#' + color2.toString(16).padStart(6, '0');
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+  return Texture.from(c);
+}
+
 export class PixiRenderer implements IRenderer {
   private app!: Application; private world!: Container; private tiles!: Container; private blds!: Container;
-  private waterLayer!: Graphics;
+  private waterDeep!: TilingSprite;
+  private waterShallow!: TilingSprite;
+  private waterFrames: Texture[] = [];
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
   private tex = new Map<string, Texture>();
   private onAssetsLoaded?: () => void;
-  private waterTiles: {x:number;y:number;deep:boolean}[] = [];
-  private waterFrame = 0;
+  private frame = 0;
 
   onReady(fn: () => void) { this.onAssetsLoaded = fn; }
 
@@ -23,10 +44,17 @@ export class PixiRenderer implements IRenderer {
     this.app = new Application();
     await this.app.init({ resizeTo: ct, backgroundColor:0x1a5276, antialias:false, resolution:1, roundPixels:true });
     ct.appendChild(this.app.canvas);
+    
+    // Générer 8 frames d'eau
+    for (let f = 0; f < 8; f++) {
+      this.waterFrames.push(makeWaterTexture(f, 0x1a5276, 0x215d85, 64));
+    }
+    
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
-    this.waterLayer = new Graphics();
-    // Ordre : eau animée → terrain → bâtiments
-    this.world.addChild(this.waterLayer, this.tiles, this.blds);
+    this.waterDeep = new TilingSprite({ texture: this.waterFrames[0], width: 0, height: 0 });
+    this.waterShallow = new TilingSprite({ texture: this.waterFrames[0], width: 0, height: 0 });
+    this.waterShallow.alpha = 0.4;
+    this.world.addChild(this.waterDeep, this.waterShallow, this.tiles, this.blds);
     this.app.stage.addChild(this.world);
     this.setupEvents();
     this.loadAssets();
@@ -80,58 +108,28 @@ export class PixiRenderer implements IRenderer {
 
   update(_dt:number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
-    this.waterFrame++;
-    this.drawWater();
-  }
-
-  private drawWater() {
-    const g = this.waterLayer;
-    g.clear();
-    const f = this.waterFrame * 0.02;
-    const WW = this.ww * TS, WH = this.wh * TS;
-
-    // Fond eau profonde
-    g.rect(0, 0, WW, WH); g.fill(0x1a5276);
-
-    // Vagues : bandes horizontales qui défilent
-    for (let y = 0; y < WH; y += 3) {
-      const wave = Math.sin(y * 0.3 + f * 1.2) * 2 + Math.sin(y * 0.15 + f * 0.7) * 4;
-      const alpha = 0.08 + Math.abs(Math.sin(y * 0.2 + f)) * 0.06;
-      g.rect(wave, y, WW, 2); g.fill({color:0x2980b9, alpha});
-    }
-
-    // Surbrillance (reflets)
-    for (let y = 0; y < WH; y += 5) {
-      const wave = Math.sin(y * 0.4 + f * 1.8) * 3;
-      if ((y + Math.floor(f * 3)) % 10 < 3) {
-        g.rect(wave, y, WW, 1); g.fill({color:0x3498db, alpha:0.12});
-      }
-    }
-
-    // Shallow water par-dessus
-    for (const wt of this.waterTiles) {
-      const x = wt.x * TS, y = wt.y * TS;
-      const wave = Math.sin(y * 0.5 + f * 1.5) * 1.5 + Math.sin(x * 0.3 + f) * 1;
-      g.rect(x + wave, y, TS, TS);
-      g.fill({color:0x2980b9, alpha:0.5});
-      // Bordure scintillante
-      g.rect(x, y, TS, TS); g.stroke({width:0.5, color:0x3498db, alpha:0.2});
-    }
+    this.frame++;
+    // Animation eau : changer de frame toutes les 8 frames logicielles (~7.5 FPS)
+    const wf = Math.floor(this.frame / 8) % this.waterFrames.length;
+    this.waterDeep.texture = this.waterFrames[wf];
+    this.waterShallow.texture = this.waterFrames[(wf + 2) % this.waterFrames.length]; // décalé
+    // Scroll lent
+    this.waterDeep.tilePosition.x = this.frame * 0.2;
+    this.waterShallow.tilePosition.x = this.frame * 0.35;
+    this.waterShallow.tilePosition.y = this.frame * 0.1;
   }
 
   centerOnWorld(w:number, h:number) {
     this.ww=w; this.wh=h; const ww=w*TS, wh=h*TS;
     this.zm = Math.min(1, this.sw/ww, this.sh/wh);
     this.cx = this.sw/2 - (ww/2)*this.zm; this.cy = this.sh/2 - (wh/2)*this.zm;
+    // Dimensionner les fonds d'eau
+    this.waterDeep.width = ww; this.waterDeep.height = wh;
+    this.waterShallow.width = ww; this.waterShallow.height = wh;
   }
 
   renderTile(t:Tile){
-    // Stocker les tuiles d'eau pour l'animation
-    if (t.terrain === 'deep_water' || t.terrain === 'shallow_water') {
-      this.waterTiles.push({x:t.x, y:t.y, deep: t.terrain==='deep_water'});
-      return;
-    }
-    // Terrain statique (cache)
+    if (t.terrain === 'deep_water' || t.terrain === 'shallow_water') return; // L'eau est gérée par les TilingSprites
     if(!this.cache[t.y])this.cache[t.y]=[];
     if(this.cache[t.y][t.x])return;
     const g=new Graphics();
@@ -166,7 +164,7 @@ export class PixiRenderer implements IRenderer {
     return { x: tx, y: ty };
   }
 
-  clear(){ this.cache=[]; this.tiles.removeChildren(); this.blds.removeChildren(); this.waterTiles=[]; this.waterLayer.clear(); }
+  clear(){ this.cache=[]; this.tiles.removeChildren(); this.blds.removeChildren(); }
   onResize(){ this.update(0); }
   renderPirate(_p:{x:number;y:number;emoji:string}){}
 }
