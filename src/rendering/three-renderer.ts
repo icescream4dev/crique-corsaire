@@ -36,9 +36,12 @@ export class ThreeRenderer implements IRenderer {
   private rt!: THREE.WebGLRenderTarget;
   private blitScene!: THREE.Scene;
   private blitQuad!: THREE.Mesh;
+  private sunLight!: THREE.DirectionalLight;
 
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
+  private waterMesh: THREE.Mesh | null = null;
+  private sceneRT!: THREE.WebGLRenderTarget; // scene pré-rendue pour l'eau
 
   // World / camera state
   private ww = 0;
@@ -68,6 +71,8 @@ export class ThreeRenderer implements IRenderer {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
     // Scene principale
@@ -84,10 +89,32 @@ export class ThreeRenderer implements IRenderer {
     );
 
     // Lumières
-    const ambient = new THREE.AmbientLight(0x8899bb, 0.7);
-    const sun = new THREE.DirectionalLight(0xffeedd, 1.3);
-    sun.position.set(30, 40, 20);
+    const ambient = new THREE.AmbientLight(0x8899bb, 0.5); // réduit car les ombres ajoutent du contraste
+
+    // Soleil directionnel avec ombres
+    const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
+    sun.position.set(40, 50, -10); // nord-ouest, haut → ombres vers sud-est
+    sun.castShadow = true;
+    sun.shadow.mapSize.width = 2048;
+    sun.shadow.mapSize.height = 2048;
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 150;
+    sun.shadow.camera.left = -40;
+    sun.shadow.camera.right = 40;
+    sun.shadow.camera.top = 40;
+    sun.shadow.camera.bottom = -40;
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.02;
+
     this.scene.add(ambient, sun);
+    this.scene.add(sun.target); // nécessaire pour que Three.js mette à jour la position
+    this.sunLight = sun;
+
+    // RenderTarget pour la scène opaque (terrain + bâtiments) → lu par le water shader
+    this.sceneRT = new THREE.WebGLRenderTarget(container.clientWidth, container.clientHeight, {
+      depthTexture: new THREE.DepthTexture(container.clientWidth, container.clientHeight),
+      depthBuffer: true,
+    });
 
     // EffectComposer : RenderPass → Vignette → Output
     const sz = new THREE.Vector2(container.clientWidth, container.clientHeight);
@@ -278,6 +305,29 @@ export class ThreeRenderer implements IRenderer {
       this.camTarget.z + CAM_DIST * Math.cos(pitch) * Math.sin(yaw)
     );
     this.camera.lookAt(this.camTarget);
+
+    // Mettre à jour les uniforms du shader eau
+    if (this.waterMesh) {
+      const wm = this.waterMesh.material as THREE.ShaderMaterial;
+      wm.uniforms.uNear.value = this.camera.near;
+      wm.uniforms.uFar.value = this.camera.far;
+    }
+
+    // Mettre à jour la shadow camera pour couvrir le frustum visible
+    if (this.sunLight) {
+      // Centrer la lumière sur la zone visible
+      const offset = new THREE.Vector3(40, 50, -10);
+      this.sunLight.position.copy(this.camTarget).add(offset);
+      this.sunLight.target.position.copy(this.camTarget);
+
+      const s = this.sunLight.shadow;
+      const margin = 5;
+      s.camera.left = this.camera.left - margin;
+      s.camera.right = this.camera.right + margin;
+      s.camera.top = this.camera.top + margin;
+      s.camera.bottom = this.camera.bottom - margin;
+      (s.camera as THREE.OrthographicCamera).updateProjectionMatrix();
+    }
   }
 
   // --- IRenderer: centerOnWorld ---
@@ -293,7 +343,19 @@ export class ThreeRenderer implements IRenderer {
 
   // --- IRenderer: update ---
 
-  update(_dt: number): void {
+  update(dt: number): void {
+    // Étape 1 : rendre la scène opaque (sans eau) dans sceneRT
+    if (this.waterMesh) this.waterMesh.visible = false;
+    this.renderer.setRenderTarget(this.sceneRT);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
+
+    // Étape 2 : rendre avec l'eau + post-processing
+    if (this.waterMesh) {
+      this.waterMesh.visible = true;
+      const mat = this.waterMesh.material as THREE.ShaderMaterial;
+      mat.uniforms.time.value += dt * 0.001;
+    }
     this.composer.render();
   }
 
@@ -340,6 +402,36 @@ export class ThreeRenderer implements IRenderer {
       }
     }
 
+    // Lissage de la heightmap (box blur 3×3, 2 passes) pour des pentes progressives
+    for (let pass = 0; pass < 3; pass++) {
+      const smoothed: number[][] = [];
+      for (let gy = 0; gy <= H; gy++) {
+        smoothed[gy] = [];
+        for (let gx = 0; gx <= W; gx++) {
+          let sum = 0, count = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const sy = gy + dy, sx = gx + dx;
+              if (sy >= 0 && sy <= H && sx >= 0 && sx <= W) {
+                sum += heightGrid[sy][sx];
+                count++;
+              }
+            }
+          }
+          smoothed[gy][gx] = sum / count;
+        }
+      }
+      // Ne lisser que les zones non-falaise (montagne = garder raide)
+      for (let gy = 0; gy <= H; gy++) {
+        for (let gx = 0; gx <= W; gx++) {
+          const orig = heightGrid[gy][gx];
+          // Garder les montagnes raides (hauteur > 0.3 → falaise)
+          if (orig > 0.3) continue;
+          heightGrid[gy][gx] = smoothed[gy][gx];
+        }
+      }
+    }
+
     // Déplacement vertical + correspondance grille
     // Après rotateX(-PI/2): X→X (largeur), Z→Y (profondeur), Y→0
     for (let i = 0; i < positions.count; i++) {
@@ -363,8 +455,8 @@ export class ThreeRenderer implements IRenderer {
     });
 
     this.terrainMesh = new THREE.Mesh(geo, mat);
-    // Translater pour que tile(0,0) = world(0,0,0)
     this.terrainMesh.position.set(worldW / 2, 0, worldH / 2);
+    this.terrainMesh.castShadow = true;
     this.terrainMesh.receiveShadow = true;
     this.scene.add(this.terrainMesh);
   }
@@ -384,6 +476,123 @@ export class ThreeRenderer implements IRenderer {
 
   renderWorld(island: IslandData): void {
     this.buildTerrain(island.tiles);
+    this.buildWater(island.width, island.height);
+  }
+
+  private buildWater(w: number, h: number): void {
+    if (this.waterMesh) {
+      this.waterMesh.geometry.dispose();
+      (this.waterMesh.material as THREE.Material).dispose();
+      this.scene.remove(this.waterMesh);
+    }
+
+    const worldW = w * TS;
+    const worldH = h * TS;
+    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        sceneColor: { value: this.sceneRT.texture },
+        sceneDepth: { value: this.sceneRT.depthTexture },
+        time: { value: 0 },
+        waterLevel: { value: 0.0 },
+        shallowColor: { value: new THREE.Color(0x1dd1a1) }, // lagon turquoise
+        midColor: { value: new THREE.Color(0x17a2b8) },     // bleu turquoise
+        deepColor: { value: new THREE.Color(0x1a5276) },    // bleu profond
+        abyssColor: { value: new THREE.Color(0x0d2b4a) },   // bleu nuit
+        uNear: { value: this.camera.near },
+        uFar: { value: this.camera.far },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPos;
+        varying vec4 vScreenPos;
+        uniform float time;
+        uniform float waterLevel;
+
+        float wave(vec2 dir, float amp, float freq, float speed, float steep, vec2 pos, float t) {
+          float phase = dot(dir, pos) * freq + t * speed;
+          return steep * amp * sin(phase);
+        }
+
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          float h = 0.0;
+          h += wave(vec2(0.6, 0.8), 0.04, 2.0, 0.8, 0.3, worldPos.xz, time);
+          h += wave(vec2(-0.4, 0.9), 0.03, 3.5, 0.5, 0.5, worldPos.xz, time);
+          h += wave(vec2(0.8, -0.2), 0.02, 5.0, 1.0, 0.4, worldPos.xz, time);
+          h += wave(vec2(-0.6, -0.7), 0.015, 7.0, 0.7, 0.6, worldPos.xz, time);
+          worldPos.y = waterLevel + h;
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+          vScreenPos = gl_Position;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D sceneColor;
+        uniform sampler2D sceneDepth;
+        uniform vec3 shallowColor;
+        uniform vec3 midColor;
+        uniform vec3 deepColor;
+        uniform vec3 abyssColor;
+        uniform float uNear;
+        uniform float uFar;
+
+        varying vec3 vWorldPos;
+        varying vec4 vScreenPos;
+
+        // Convertit la profondeur NDC [0,1] en distance monde (linéaire en ortho)
+        float linearDepth(float zNdc) {
+          return uNear + zNdc * (uFar - uNear);
+        }
+
+        void main() {
+          vec3 ndc = vScreenPos.xyz / vScreenPos.w;
+          vec2 uv = ndc.xy * 0.5 + 0.5;
+
+          float groundZNdc = texture(sceneDepth, uv).r;   // [0,1] depth buffer
+          float waterZNdc = (ndc.z + 1.0) / 2.0;           // convertir NDC[-1,1] → depth buffer [0,1]
+
+          // Terrain au-dessus de l'eau → pas d'effet
+          if (groundZNdc < waterZNdc) {
+            gl_FragColor = texture(sceneColor, uv);
+            return;
+          }
+
+          // Profondeur en unités monde
+          float groundDist = linearDepth(groundZNdc);
+          float waterDist = linearDepth(waterZNdc);
+          float waterDepth = groundDist - waterDist; // mètres
+
+          vec3 bgColor = texture(sceneColor, uv).rgb;
+
+          // 4 paliers de couleur : lagon → turquoise → profond → abysse
+          vec3 waterColor;
+          if (waterDepth < 0.15) {
+            waterColor = mix(shallowColor, midColor, waterDepth / 0.15);
+          } else if (waterDepth < 0.5) {
+            waterColor = mix(midColor, deepColor, (waterDepth - 0.15) / 0.35);
+          } else {
+            waterColor = mix(deepColor, abyssColor, clamp((waterDepth - 0.5) / 0.5, 0.0, 1.0));
+          }
+
+          float opacity = clamp(0.3 + waterDepth * 2.0, 0.3, 0.9);
+          vec3 color = mix(bgColor, waterColor, opacity);
+
+          // Écume très fine sur les berges
+          float foam = 1.0 - smoothstep(0.02, 0.06, waterDepth);
+          color = mix(color, vec3(0.96, 0.97, 1.0), foam * 0.25);
+
+          gl_FragColor = vec4(color, 1.0);
+        }`,
+      transparent: false,
+      depthWrite: true,
+      side: THREE.DoubleSide,
+    });
+
+    this.waterMesh = new THREE.Mesh(geo, mat);
+    this.waterMesh.position.set(worldW / 2, 0, worldH / 2);
+    this.waterMesh.renderOrder = 1; // après le terrain
+    this.scene.add(this.waterMesh);
   }
 
   // --- Bâtiments ---
@@ -470,6 +679,7 @@ export class ThreeRenderer implements IRenderer {
     const h = this.ct.clientHeight;
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
+    this.sceneRT.setSize(w, h);
     this.updateCamera();
   }
 
