@@ -49,8 +49,8 @@ export class PixiRenderer implements IRenderer {
     try {
       // Charger les tiles d'eau individuels (extraits du tileset)
       const [sb, wd] = await Promise.all([
-        Assets.load('/sprites/seabed_tile.png'),
-        Assets.load('/sprites/water_tile.png'),
+        Assets.load('/sprites/seabed_v2.png'),
+        Assets.load('/sprites/water.png'),
       ]);
       this.seabed.texture = sb;
       this.waterDeep.texture = wd;
