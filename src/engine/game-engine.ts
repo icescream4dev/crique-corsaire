@@ -85,7 +85,7 @@ export class GameEngine {
   }
 
   /** Construit l'affichage initial (appelé une seule fois). */
-  private buildWorld(): void {
+  buildWorld(): void {
     this.renderer.clear();
     for (const row of this.state.island.tiles) {
       for (const tile of row) {

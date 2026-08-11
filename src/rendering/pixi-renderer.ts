@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets, Texture } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
@@ -10,6 +10,7 @@ export class PixiRenderer implements IRenderer {
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
+  private tex = new Map<string, Texture>();
 
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
@@ -19,6 +20,20 @@ export class PixiRenderer implements IRenderer {
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
     this.world.addChild(this.tiles, this.blds); this.app.stage.addChild(this.world);
     this.setupEvents();
+    // Lancer le chargement des assets
+    this.loadAssets();
+  }
+
+  private async loadAssets() {
+    try {
+      this.tex.set('port', await Assets.load('/ponton-pirate.png'));
+      // Rafraîchir les bâtiments existants
+      if ((window as any).gameEngine) {
+        (window as any).gameEngine.buildWorld?.();
+      }
+    } catch(e) {
+      console.warn('Asset load failed:', e);
+    }
   }
 
   private get rect() { return this.ct.getBoundingClientRect(); }
@@ -63,7 +78,7 @@ export class PixiRenderer implements IRenderer {
   update(_dt:number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
     const h = document.getElementById('hud');
-    if (h) h.textContent = `sw:${Math.round(this.sw)} sh:${Math.round(this.sh)} cam:${Math.round(this.cx)},${Math.round(this.cy)} zm:${this.zm.toFixed(2)} wld:${this.ww}x${this.wh}`;
+    if (h) h.textContent = `🏴‍☠️ Crique Corsaire`;
   }
 
   centerOnWorld(w:number, h:number) {
@@ -75,25 +90,20 @@ export class PixiRenderer implements IRenderer {
   renderTile(t:Tile){ if(!this.cache[t.y])this.cache[t.y]=[]; if(this.cache[t.y][t.x])return; const g=new Graphics(); g.rect(t.x*TS,t.y*TS,TS,TS); g.fill(C[t.terrain]??0x333333); g.stroke({width:.5,color:0,alpha:.1}); this.tiles.addChild(g); this.cache[t.y][t.x]=g; }
 
   renderBuilding(t:Tile){
-    if(!t.buildings.length)return; const b=t.buildings[0]; const g=new Graphics(); const bx=b.gridX*TS, by=b.gridY*TS;
+    if(!t.buildings.length)return; const b=t.buildings[0]; const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
-      const f=Math.sin(Date.now()*0.003)*0.5;
-      g.circle(bx+8,by+8,10); g.fill({color:0x2980b9, alpha:0.3});
-      g.rect(bx+2,by+2,2,14); g.fill(0x5c3a0a); g.rect(bx+2,by+2,1,14); g.fill(0x7a4f1a);
-      g.rect(bx+12,by+2,2,14); g.fill(0x5c3a0a); g.rect(bx+13,by+2,1,14); g.fill(0x7a4f1a);
-      for(let i=0;i<4;i++){ const py=by+4+i*3; g.rect(bx+4,py,8,2); g.fill(0x8b6914); g.rect(bx+5,py,1,2); g.fill(0x9b7934); g.rect(bx+9,py,1,2); g.fill(0x7b5904); }
-      g.rect(bx+3,by+1,1,2); g.fill(0xa08050); g.rect(bx+12,by+1,1,2); g.fill(0xa08050);
-      g.rect(bx+7.5+f,by-14,1.5,16); g.fill(0x4a3520);
-      const fx=Math.round(f*2); g.rect(bx+8.5+fx,by-14,8+f,6); g.fill(0x111); g.stroke({width:0.8,color:0x444});
-      g.rect(bx+10+fx,by-12,2,2); g.fill(0xeee); g.rect(bx+12+fx,by-12,2,2); g.fill(0xeee);
-      g.rect(bx+10.5+fx,by-11.5,0.8,0.8); g.fill(0x111); g.rect(bx+12.5+fx,by-11.5,0.8,0.8); g.fill(0x111);
-      g.rect(bx+10+fx,by-9,5,0.8); g.fill(0xddd);
-      g.rect(bx+3,by-4,2,3); g.fill(0xd4a017); g.rect(bx+3.3,by-3.5,1.4,2); g.fill(0xffdd44);
-    }else{
+      const pt = this.tex.get('port');
+      if(pt){
+        const s = new Sprite(pt);
+        s.x = bx*TS - TS*3; s.y = by*TS - TS*4; s.scale.set(0.25);
+        this.blds.addChild(s);
+      }
+    } else {
+      const g = new Graphics();
       g.rect(bx+1,by+1,TS-2,TS-2); g.fill(b.operational?0xd4a017:0x555555); g.stroke({width:1,color:0});
       g.rect(bx+1,by+1,TS-2,3); g.fill(b.operational?0xe74c3c:0x444444);
+      this.blds.addChild(g);
     }
-    this.blds.addChild(g);
   }
 
   getTileAt(sx:number, sy:number): {x:number;y:number}|null {
