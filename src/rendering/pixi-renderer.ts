@@ -12,6 +12,7 @@ export class PixiRenderer implements IRenderer {
   private cache: Graphics[][] = [];
   private tex = new Map<string, Texture>();
   private onAssetsLoaded?: () => void;
+  private anims: { update: (dt: number) => void }[] = [];
 
   /** Permet au moteur de s'enregistrer pour être notifié du chargement des assets. */
   onReady(fn: () => void) { this.onAssetsLoaded = fn; }
@@ -75,6 +76,7 @@ export class PixiRenderer implements IRenderer {
 
   update(_dt:number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
+    for (const a of this.anims) a.update(_dt);
     const h = document.getElementById('hud');
     if (h) h.textContent = `🏴‍☠️ Crique Corsaire`;
   }
@@ -92,10 +94,25 @@ export class PixiRenderer implements IRenderer {
     if(b.defId==='port'){
       const pt = this.tex.get('port');
       if(pt){
+        const container = new Container();
+        container.x = bx+TS/2; container.y = by+TS/2;
         const s = new Sprite(pt);
-        s.x = bx+TS/2; s.y = by+TS/2; s.scale.set(16/200);
-        s.anchor.set(0.5);
-        this.blds.addChild(s);
+        s.anchor.set(0.5); s.scale.set(16/200);
+        container.addChild(s);
+        // Lanterne glow animée
+        const glow = new Graphics();
+        glow.circle(0, 0, 3); glow.fill({color:0xffaa00, alpha:0.6});
+        container.addChild(glow);
+        const start = Date.now();
+        this.anims.push({
+          update: (_dt: number) => {
+            const t = (Date.now() - start) * 0.003;
+            glow.alpha = 0.3 + Math.sin(t * 2) * 0.2 + Math.sin(t * 5) * 0.1;
+            // Légère ondulation du drapeau via skew
+            s.skew.x = Math.sin(t * 1.5) * 0.02;
+          }
+        });
+        this.blds.addChild(container);
       }
     } else {
       const g = new Graphics();
