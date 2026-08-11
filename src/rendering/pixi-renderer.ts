@@ -5,30 +5,10 @@ import type { Tile } from '../core/types';
 const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 24;
 const C: Record<string, number> = { deep_water:0x0d3b66, shallow_water:0x1a8c8c, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
 
-/** Couleurs Caraïbes */
-const DEEP_BLUE = 0x0d3b66;
-const SHALLOW = 0x17a589;
-
-/** Texture de scintillement (sparkles) — quelques pixels brillants aléatoires */
-function makeSparkleTex(w: number, h: number): Texture {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const ctx = c.getContext('2d')!;
-  const img = ctx.createImageData(w, h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-    const v = n - Math.floor(n);
-    const i = (y * w + x) * 4;
-    img.data[i] = 255; img.data[i + 1] = 255; img.data[i + 2] = 255;
-    img.data[i + 3] = v > 0.985 ? Math.floor((v - 0.985) * 2000) : 0;
-  }
-  ctx.putImageData(img, 0, 0);
-  return Texture.from(c);
-}
-
 export class PixiRenderer implements IRenderer {
   private app!: Application; private world!: Container; private tiles!: Container; private blds!: Container;
+  private seabed!: TilingSprite;
   private waterDeep!: TilingSprite;
-  private waterShallow!: TilingSprite;
   private sparkleLayer!: TilingSprite;
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx = 0; private dsy = 0; private dcx = 0; private dcy = 0; private pd = 0; private pz = 1;
@@ -42,33 +22,47 @@ export class PixiRenderer implements IRenderer {
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
     this.app = new Application();
-    await this.app.init({ resizeTo: ct, backgroundColor: DEEP_BLUE, antialias: false, resolution: 1, roundPixels: true });
+    await this.app.init({ resizeTo: ct, backgroundColor: 0x0d3b66, antialias: false, resolution: 1, roundPixels: true });
     ct.appendChild(this.app.canvas);
 
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
 
-    // Fond eau profonde (bleu caraïbe profond)
-    this.waterDeep = new TilingSprite({ texture: Texture.WHITE, width: 0, height: 0 });
-    this.waterDeep.tint = DEEP_BLUE;
+    // Fond marin (tileset isométrique)
+    this.seabed = new TilingSprite({ texture: Texture.WHITE, width: 0, height: 0 });
 
-    // Couche shallow water (turquoise)
-    this.waterShallow = new TilingSprite({ texture: Texture.WHITE, width: 0, height: 0 });
-    this.waterShallow.tint = SHALLOW;
-    this.waterShallow.alpha = 0;
+    // Eau profonde (tileset semi-transparent)
+    this.waterDeep = new TilingSprite({ texture: Texture.WHITE, width: 0, height: 0 });
+    this.waterDeep.alpha = 0.65;
 
     // Sparkles
-    this.sparkleLayer = new TilingSprite({ texture: makeSparkleTex(128, 128), width: 0, height: 0 });
-    this.sparkleLayer.alpha = 0.15;
+    this.sparkleLayer = new TilingSprite({ texture: Texture.WHITE, width: 0, height: 0 });
+    this.sparkleLayer.alpha = 0.08;
 
-    this.world.addChild(this.waterDeep, this.waterShallow, this.sparkleLayer, this.tiles, this.blds);
+    // Ordre : fond marin → eau → sparkles → terrain → bâtiments
+    this.world.addChild(this.seabed, this.waterDeep, this.sparkleLayer, this.tiles, this.blds);
     this.app.stage.addChild(this.world);
     this.setupEvents();
     this.loadAssets();
   }
 
   private async loadAssets() {
-    try { this.tex.set('port', await Assets.load('/ponton-pirate.png')); this.onAssetsLoaded?.(); }
-    catch (e) { console.warn('Asset load failed:', e); }
+    try {
+      // Charger les tilesets d'eau
+      const [sb, wd] = await Promise.all([
+        Assets.load('/sprites/seabed.png'),
+        Assets.load('/sprites/water_deep.png'),
+      ]);
+      this.seabed.texture = sb;
+      this.waterDeep.texture = wd;
+      // Redimensionner après chargement
+      if (this.ww > 0) {
+        this.seabed.width = this.ww * TS; this.seabed.height = this.wh * TS;
+        this.waterDeep.width = this.ww * TS; this.waterDeep.height = this.wh * TS;
+      }
+      // Charger le sprite du port
+      this.tex.set('port', await Assets.load('/ponton-pirate.png'));
+      this.onAssetsLoaded?.();
+    } catch (e) { console.warn('Asset load failed:', e); }
   }
 
   private get rect() { return this.ct.getBoundingClientRect(); }
@@ -113,28 +107,33 @@ export class PixiRenderer implements IRenderer {
   update(_dt: number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
     this.frame++;
-    const t = this.frame * 0.008; // très lent
-    
-    // Scintillements subtils
-    this.sparkleLayer.tilePosition.x = Math.floor(this.frame * 0.06);
-    this.sparkleLayer.tilePosition.y = Math.floor(this.frame * 0.04);
-    this.sparkleLayer.alpha = 0.12 + Math.sin(t) * 0.05;
-    
-    // Variation de teinte turquoise
-    const cycle = Math.sin(t * 0.7) * 0.5 + 0.5; // 0..1 oscillant lentement
-    const r = Math.floor(23 + cycle * 15);
-    const g = Math.floor(165 + cycle * 20);
-    const b = Math.floor(140 + cycle * 25);
-    this.waterShallow.tint = (r << 16) | (g << 8) | b;
+    const t = this.frame * 0.008;
+
+    // Palette cycling simulé : osciller la teinte de l'eau
+    const cycle = Math.sin(t) * 0.5 + 0.5;
+    const r = Math.floor(13 + cycle * 5);
+    const g = Math.floor(59 + cycle * 12);
+    const b = Math.floor(102 + cycle * 16);
+    this.waterDeep.tint = (r << 16) | (g << 8) | b;
+    this.waterDeep.alpha = 0.6 + Math.sin(t * 0.7) * 0.06;
+
+    // Scroll lent des couches
+    this.seabed.tilePosition.x = Math.floor(this.frame * 0.02);
+    this.seabed.tilePosition.y = Math.floor(this.frame * 0.015);
+    this.waterDeep.tilePosition.x = Math.floor(this.frame * 0.04);
+    this.waterDeep.tilePosition.y = Math.floor(this.frame * 0.03);
+
+    // Sparkles
+    this.sparkleLayer.alpha = 0.06 + Math.sin(t * 1.3) * 0.03;
   }
 
   centerOnWorld(w: number, h: number) {
     this.ww = w; this.wh = h; const ww = w * TS, wh = h * TS;
     this.zm = Math.min(1, this.sw / ww, this.sh / wh);
     this.cx = this.sw / 2 - (ww / 2) * this.zm; this.cy = this.sh / 2 - (wh / 2) * this.zm;
-    this.waterDeep.width = ww; this.waterDeep.height = wh;
-    this.waterShallow.width = ww; this.waterShallow.height = wh;
-    this.sparkleLayer.width = ww; this.sparkleLayer.height = wh;
+    const size = Math.max(ww, wh) * 2; // couvrir toute la zone
+    this.seabed.width = size; this.seabed.height = size;
+    this.waterDeep.width = size; this.waterDeep.height = size;
   }
 
   renderTile(t: Tile) {
