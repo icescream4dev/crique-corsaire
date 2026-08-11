@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head><meta charset="UTF-8"><style>body{margin:0;overflow:hidden}</style></head>
+<body>
+<div id="c" style="width:100vw;height:100vh"></div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.min.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+const container = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setPixelRatio(1);
+renderer.setSize(container.clientWidth, container.clientHeight);
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xff6600); // orange vif
+
+// Caméra ortho
+const aspect = container.clientWidth / container.clientHeight;
+const camera = new THREE.OrthographicCamera(-10*aspect, 10*aspect, 10, -10, 0.1, 100);
+camera.position.set(10, 8, 10);
+camera.lookAt(0, 0, 0);
+
+// Cube rouge
+const geo = new THREE.BoxGeometry(3, 3, 3);
+const mat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+const cube = new THREE.Mesh(geo, mat);
+scene.add(cube);
+
+// Lumière (pas utile pour MeshBasicMaterial mais bon)
+scene.add(new THREE.AmbientLight(0xffffff, 1));
+
+function animate() {
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>

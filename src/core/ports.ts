@@ -5,7 +5,7 @@
 
 import type { IslandData, GameState, BuildingDef, ResourceDef, PirateType, Tile } from './types';
 
-/** Abstraction du rendu. Le domaine appelle ces méthodes, l'adapter PixiJS les implémente. */
+/** Abstraction du rendu. Le domaine appelle ces méthodes, l'adapter (Three.js ou PixiJS) les implémente. */
 export interface IRenderer {
   init(container: HTMLElement): Promise<void>;
   centerOnWorld(worldW: number, worldH: number): void;
@@ -13,9 +13,11 @@ export interface IRenderer {
   renderTile(tile: Tile): void;
   renderBuilding(tile: Tile): void;
   renderPirate(pirate: { x: number; y: number; emoji: string }): void;
+  /** Construit le monde en une seule passe (remplace le renderTile itératif pour le 3D). */
+  renderWorld(island: IslandData): void;
   clear(): void;
-  onResize(width: number, height: number): void;
-  /** Retourne la tile sous la souris (pour le clic) */
+  onResize(): void;
+  /** Retourne la tile sous la souris (pour le clic). */
   getTileAt(screenX: number, screenY: number): { x: number; y: number } | null;
 }
 

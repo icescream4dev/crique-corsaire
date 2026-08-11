@@ -5,19 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Crique Corsaire</title>
     <style>
-      body { margin: 0; background: #1a1a2e; font-family: monospace; }
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; font-family: monospace; }
+      #game-container { width: 100%; height: 100%; }
+      #game-container canvas { image-rendering: pixelated; display: block; }
+      #hud { position: fixed; top: 8px; left: 8px; z-index: 20; color: rgba(255,255,255,0.7); font-size: 13px; pointer-events: none; }
       #toolbar { position: fixed; top: 8px; right: 8px; z-index: 20; display: flex; gap: 6px; }
-      #toolbar button { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+      #toolbar button, #toolbar a { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; text-decoration: none; font-family: monospace; }
       #toolbar button:active { background: rgba(255,255,255,0.3); }
     </style>
   </head>
   <body>
     <div id="hud">🏴‍☠️ Crique Corsaire</div>
-    <div id="toolbar"><button id="btn-regenerate">🔄 Nouvelle île</button><button id="btn-port">⚓ Port</button><a href="/batiments.html" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2);padding:6px 10px;border-radius:4px;font-size:12px;text-decoration:none">🏗️ Bâtiments</a></div>
+    <div id="toolbar">
+      <button id="btn-regenerate">🔄 Nouvelle île</button>
+      <button id="btn-port">⚓ Port</button>
+      <a href="/batiments.html">🏗️ Bâtiments</a>
+    </div>
     <div id="game-container"></div>
-    <script type="importmap">
-{ "imports": { "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.min.mjs" } }
-</script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

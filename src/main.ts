@@ -1,9 +1,9 @@
 // ============================================================
-// MAIN — Point d'entrée.
+// MAIN — Point d'entrée Three.js.
 // ============================================================
 
 import { GameEngine } from './engine/game-engine';
-import { PixiRenderer } from './rendering/pixi-renderer';
+import { ThreeRenderer } from './rendering/three-renderer';
 import { SimpleIslandGenerator } from './generation/perlin-generator';
 import { JsonDataLoader } from './generation/data-loader';
 import { IndexedDBStore } from './persistence/indexeddb-store';
@@ -13,16 +13,16 @@ async function main() {
   const container = document.getElementById('game-container');
   if (!container) throw new Error('Missing #game-container');
 
-  const renderer = new PixiRenderer();
-  renderer.onReady(() => engine.buildWorld()); // rafraîchir quand les sprites sont chargés
+  const renderer = new ThreeRenderer();
+  renderer.onReady(() => engine.buildWorld()); // rafraîchir quand les assets sont prêts
   const engine = new GameEngine(renderer, new IndexedDBStore(), new SimpleIslandGenerator(), new JsonDataLoader());
 
   await engine.init(container, Date.now());
 
-  // Clic sur le canvas → poser le bâtiment sélectionné
+  // Clic pour poser le bâtiment sélectionné
   const canvas = container.querySelector('canvas');
   if (canvas) {
-    canvas.addEventListener('click', (e) => {
+    canvas.addEventListener('click', (e: MouseEvent) => {
       if (!engine.selectedBuilding) return;
       const tile = renderer.getTileAt(e.clientX, e.clientY);
       if (tile) {

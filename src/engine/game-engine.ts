@@ -87,9 +87,10 @@ export class GameEngine {
   /** Construit l'affichage initial (appelé une seule fois). */
   buildWorld(): void {
     this.renderer.clear();
+    this.renderer.renderWorld(this.state.island);
+    // Bâtiments : parcourir les tuiles avec des bâtiments
     for (const row of this.state.island.tiles) {
       for (const tile of row) {
-        this.renderer.renderTile(tile);
         if (tile.buildings.length) this.renderer.renderBuilding(tile);
       }
     }
