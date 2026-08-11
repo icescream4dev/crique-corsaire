@@ -101,9 +101,9 @@ export class GameEngine {
     const t = tile.terrain;
 
     if (defId === 'port') {
-      // shallow_water + au moins 1 voisin terre
+      // shallow_water + terre au sud-est du port (le bâtiment est en bas à droite du sprite)
       if (t !== 'shallow_water') return false;
-      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      for (const [dx, dy] of [[1,0],[0,1],[1,1]]) {
         const nt = this.state.island.tiles[y+dy]?.[x+dx]?.terrain;
         if (nt && nt !== 'deep_water' && nt !== 'shallow_water') return true;
       }
@@ -120,16 +120,6 @@ export class GameEngine {
     const tile = this.state.island.tiles[y]![x]!;
 
     const anchor = defId === 'port' ? 'stilts' as const : 'ground' as const;
-    // Orientation : faire face à la terre
-    let orientation = 0;
-    if (defId === 'port') {
-      let dx = 0, dy = 0;
-      for (const [ndx, ndy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
-        const nt = this.state.island.tiles[y+ndy]?.[x+ndx]?.terrain;
-        if (nt && nt !== 'deep_water' && nt !== 'shallow_water') { dx += ndx; dy += ndy; }
-      }
-      orientation = Math.atan2(dx, -dy); // 0 = sud, π = nord, ±π/2 = est/ouest
-    }
     const instance: BuildingInstance = {
       id: `${defId}_${x}_${y}_${Date.now()}`,
       defId,
@@ -138,7 +128,6 @@ export class GameEngine {
       gridY: y,
       stackLevel: 0,
       anchor,
-      orientation,
       constructionProgress: 1,
       operational: true,
     };
