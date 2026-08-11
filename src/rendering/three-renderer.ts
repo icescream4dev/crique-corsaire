@@ -4,6 +4,10 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile, IslandData } from '../core/types';
 
@@ -28,6 +32,7 @@ export class ThreeRenderer implements IRenderer {
   private renderer!: THREE.WebGLRenderer;
   private camera!: THREE.OrthographicCamera;
   private scene!: THREE.Scene;
+  private composer!: EffectComposer;
   private rt!: THREE.WebGLRenderTarget;
   private blitScene!: THREE.Scene;
   private blitQuad!: THREE.Mesh;
@@ -84,6 +89,44 @@ export class ThreeRenderer implements IRenderer {
     sun.position.set(30, 40, 20);
     this.scene.add(ambient, sun);
 
+    // EffectComposer : RenderPass → Vignette → Output
+    const sz = new THREE.Vector2(container.clientWidth, container.clientHeight);
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+
+    // Vignette simple (assombrit les bords)
+    const vignettePass = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        uIntensity: { value: 0.35 },
+        uAspect: { value: sz.x / sz.y },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float uIntensity;
+        uniform float uAspect;
+        varying vec2 vUv;
+        void main() {
+          vec4 color = texture(tDiffuse, vUv);
+          vec2 centered = vUv - 0.5;
+          centered.x *= uAspect;
+          float dist = length(centered) * 1.5;
+          float vignette = 1.0 - dist * uIntensity;
+          vignette = clamp(vignette, 0.0, 1.0);
+          vignette = smoothstep(0.0, 1.0, vignette);
+          gl_FragColor = vec4(color.rgb * vignette, color.a);
+        }`,
+    });
+    this.composer.addPass(vignettePass);
+
+    this.composer.addPass(new OutputPass());
+
     // RenderTarget basse résolution (pixel art)
     this.rt = new THREE.WebGLRenderTarget(TARGET_W, TARGET_H, {
       minFilter: THREE.NearestFilter,
@@ -136,7 +179,8 @@ export class ThreeRenderer implements IRenderer {
       // dx = droite écran, dy = bas écran (DOM)
       // Drag droite → caméra bouge à gauche (voir côté gauche de la carte)
       // Drag bas → caméra bouge en haut (voir le haut de la carte)
-      const scale = this.camera.right * 2 / this.ct.clientWidth / this.camZoom;
+      // 1 pixel écran → N unités monde, ×1.5 pour un pan réactif
+      const scale = this.camera.right * 3 / this.ct.clientWidth;
       this.camTarget.x += (-dx * rightXZ.x + dy * upXZ.x) * scale;
       this.camTarget.z += (-dx * rightXZ.z + dy * upXZ.z) * scale;
       this.updateCamera();
@@ -250,13 +294,7 @@ export class ThreeRenderer implements IRenderer {
   // --- IRenderer: update ---
 
   update(_dt: number): void {
-    // Rendu principal dans le RenderTarget basse résolution (pixel art)
-    this.renderer.setRenderTarget(this.rt);
-    this.renderer.render(this.scene, this.camera);
-
-    // Blitter vers l'écran
-    this.renderer.setRenderTarget(null);
-    this.renderer.render(this.blitScene, new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1));
+    this.composer.render();
   }
 
   // --- Terrain ---
@@ -428,7 +466,10 @@ export class ThreeRenderer implements IRenderer {
   // --- Resize ---
 
   onResize(): void {
-    this.renderer.setSize(this.ct.clientWidth, this.ct.clientHeight);
+    const w = this.ct.clientWidth;
+    const h = this.ct.clientHeight;
+    this.renderer.setSize(w, h);
+    this.composer.setSize(w, h);
     this.updateCamera();
   }
 
