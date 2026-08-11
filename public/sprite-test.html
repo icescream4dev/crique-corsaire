@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Sprite Test - PixiJS 8</title>
+<style>body{margin:0;background:#111;color:#fff;font:14px monospace}#panel{position:fixed;top:0;left:0;z-index:10;padding:10px;background:rgba(0,0,0,0.8)}button{margin:4px;padding:6px 10px;cursor:pointer;background:#333;color:#fff;border:1px solid #555}#view{width:100vw;height:100vh}</style></head><body>
+<div id="panel"><h3>Sprite Test — PixiJS 8</h3><button id="btn-port">⚓ Port</button><button id="btn-clear">Clear</button><span id="status" style="margin-left:10px">Initializing...</span></div>
+<div id="view"></div>
+<script type="importmap">
+{ "imports": { "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.min.mjs" } }
+</script>
+<script type="module">
+import { Application, Sprite, Assets } from 'pixi.js';
+
+const app = new Application();
+await app.init({ resizeTo: document.getElementById('view'), backgroundColor: 0x0a1628, antialias: false, resolution: 1, roundPixels: true });
+document.getElementById('view').appendChild(app.canvas);
+document.getElementById('status').textContent = 'PixiJS 8 ready';
+
+document.getElementById('btn-port').onclick = async () => {
+  const st = document.getElementById('status');
+  st.textContent = 'Loading...';
+  try {
+    const tex = await Assets.load('/ponton-pirate.png');
+    st.textContent = '✅ Loaded: ' + tex.width + 'x' + tex.height;
+    const s = new Sprite(tex);
+    s.anchor.set(0.5);
+    s.x = app.screen.width / 2;
+    s.y = app.screen.height / 2;
+    s.scale.set(2);
+    app.stage.addChild(s);
+  } catch(e) {
+    st.textContent = '❌ ' + e.message;
+    console.error(e);
+  }
+};
+
+document.getElementById('btn-clear').onclick = () => {
+  app.stage.removeChildren();
+  document.getElementById('status').textContent = 'Cleared';
+};
+</script></body></html>
