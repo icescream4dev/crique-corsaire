@@ -1,50 +1,18 @@
-import { Application, Container, Graphics, Sprite, Assets, Texture, Filter, RenderTexture } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets, Texture } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
 const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 24;
 const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
 
-// --- WATER FILTER (post-processing) ---
-const waterFrag = `
-varying vec2 vTextureCoord;
-uniform sampler2D uSampler;
-uniform float uTime;
-
-void main() {
-    vec2 uv = vTextureCoord;
-    
-    // Distorsion de réfraction
-    float dx = sin(uv.y * 200.0 + uTime * 0.5) * 2.0 + cos(uv.x * 180.0 + uTime * 0.7) * 1.5;
-    float dy = cos(uv.x * 180.0 + uTime * 0.6) * 2.0 + sin(uv.y * 200.0 + uTime * 0.5) * 1.5;
-    vec2 duv = uv + vec2(dx, dy) / 1000.0;
-    
-    vec4 scene = texture2D(uSampler, duv);
-    
-    // Eau caraïbe
-    vec3 water = vec3(0.10, 0.32, 0.46);
-    float mixVal = 0.45 + sin(uv.x * 50.0 + uTime) * 0.05;
-    vec3 result = mix(scene.rgb, water, mixVal);
-    
-    // Reflets
-    float spec = sin(uv.x * 30.0 + uTime * 0.8) * cos(uv.y * 25.0 + uTime * 1.1) * 0.5 + 0.5;
-    result += spec * vec3(0.06, 0.10, 0.16);
-    
-    gl_FragColor = vec4(result, 1.0);
-}`;
-
 export class PixiRenderer implements IRenderer {
   private app!: Application; private world!: Container; private tiles!: Container; private blds!: Container;
   private shadows!: Container;
-  private waterFilter!: Filter;
-  private waterSprite!: Sprite;
-  private sceneRT!: RenderTexture;
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
   private tex = new Map<string, Texture>();
   private onAssetsLoaded?: () => void;
-  private frame = 0;
 
   onReady(fn: () => void) { this.onAssetsLoaded = fn; }
 
@@ -57,22 +25,6 @@ export class PixiRenderer implements IRenderer {
     this.world = new Container(); this.tiles = new Container(); this.shadows = new Container(); this.blds = new Container();
     this.world.addChild(this.tiles, this.shadows, this.blds);
     this.app.stage.addChild(this.world);
-
-    // Scene capture texture
-    this.sceneRT = RenderTexture.create({ width: 1280, height: 1280 });
-
-    // Water filter (sur le sprite qui capture la scène)
-    this.waterFilter = new Filter({
-      glProgram: { vertex: undefined, fragment: waterFrag } as any,
-      resources: {},
-    });
-    (this.waterFilter as any)._uniforms = { uTime: 0 };
-
-    this.waterSprite = new Sprite(this.sceneRT);
-    this.waterSprite.filters = [this.waterFilter];
-    this.waterSprite.width = this.sw; this.waterSprite.height = this.sh;
-    this.app.stage.addChild(this.waterSprite);
-
     this.setupEvents();
     this.loadAssets();
   }
@@ -125,16 +77,6 @@ export class PixiRenderer implements IRenderer {
 
   update(_dt: number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
-    this.frame++;
-    if (this.waterFilter) {
-      (this.waterFilter as any)._uniforms.uTime = this.frame * 0.016;
-    }
-    // Capturer la scène → appliquer le filtre eau
-    const renderer = this.app.renderer;
-    renderer.render({ container: this.world, target: this.sceneRT, clear: true });
-    this.waterSprite.texture = this.sceneRT;
-    this.waterSprite.width = this.sw;
-    this.waterSprite.height = this.sh;
   }
 
   centerOnWorld(w: number, h: number) {
