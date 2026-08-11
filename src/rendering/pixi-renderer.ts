@@ -47,10 +47,10 @@ export class PixiRenderer implements IRenderer {
 
   private async loadAssets() {
     try {
-      // Charger les tilesets d'eau
+      // Charger les tiles d'eau individuels (extraits du tileset)
       const [sb, wd] = await Promise.all([
-        Assets.load('/sprites/seabed.png'),
-        Assets.load('/sprites/water_deep.png'),
+        Assets.load('/sprites/seabed_tile.png'),
+        Assets.load('/sprites/water_tile.png'),
       ]);
       this.seabed.texture = sb;
       this.waterDeep.texture = wd;
@@ -109,7 +109,7 @@ export class PixiRenderer implements IRenderer {
     this.frame++;
     const t = this.frame * 0.008;
 
-    // Palette cycling simulé : osciller la teinte de l'eau
+    // Palette cycling : osciller la teinte de l'eau
     const cycle = Math.sin(t) * 0.5 + 0.5;
     const r = Math.floor(13 + cycle * 5);
     const g = Math.floor(59 + cycle * 12);
@@ -117,13 +117,13 @@ export class PixiRenderer implements IRenderer {
     this.waterDeep.tint = (r << 16) | (g << 8) | b;
     this.waterDeep.alpha = 0.6 + Math.sin(t * 0.7) * 0.06;
 
-    // Scroll lent des couches
-    this.seabed.tilePosition.x = Math.floor(this.frame * 0.02);
-    this.seabed.tilePosition.y = Math.floor(this.frame * 0.015);
-    this.waterDeep.tilePosition.x = Math.floor(this.frame * 0.04);
-    this.waterDeep.tilePosition.y = Math.floor(this.frame * 0.03);
+    // Scroll très lent (pixel snap)
+    this.seabed.tilePosition.x = Math.floor(this.frame * 0.015);
+    this.seabed.tilePosition.y = Math.floor(this.frame * 0.01);
+    this.waterDeep.tilePosition.x = Math.floor(this.frame * 0.03);
+    this.waterDeep.tilePosition.y = Math.floor(this.frame * 0.02);
 
-    // Sparkles
+    // Sparkles subtils
     this.sparkleLayer.alpha = 0.06 + Math.sin(t * 1.3) * 0.03;
   }
 
@@ -131,9 +131,9 @@ export class PixiRenderer implements IRenderer {
     this.ww = w; this.wh = h; const ww = w * TS, wh = h * TS;
     this.zm = Math.min(1, this.sw / ww, this.sh / wh);
     this.cx = this.sw / 2 - (ww / 2) * this.zm; this.cy = this.sh / 2 - (wh / 2) * this.zm;
-    const size = Math.max(ww, wh) * 2; // couvrir toute la zone
-    this.seabed.width = size; this.seabed.height = size;
-    this.waterDeep.width = size; this.waterDeep.height = size;
+    // Couvrir le monde avec les tiles
+    this.seabed.width = ww; this.seabed.height = wh;
+    this.waterDeep.width = ww; this.waterDeep.height = wh;
   }
 
   renderTile(t: Tile) {
