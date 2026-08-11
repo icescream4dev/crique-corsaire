@@ -1,13 +1,42 @@
-import { Application, Container, Graphics, Sprite, Assets, Texture } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets, Texture, Filter } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
 const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 24;
 const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
 
+// --- WATER FILTER (post-processing) ---
+const waterFrag = `
+varying vec2 vTextureCoord;
+uniform sampler2D uSampler;
+uniform float uTime;
+
+void main() {
+    vec2 uv = vTextureCoord;
+    
+    // Distorsion de réfraction
+    float dx = sin(uv.y * 200.0 + uTime * 0.5) * 2.0 + cos(uv.x * 180.0 + uTime * 0.7) * 1.5;
+    float dy = cos(uv.x * 180.0 + uTime * 0.6) * 2.0 + sin(uv.y * 200.0 + uTime * 0.5) * 1.5;
+    vec2 duv = uv + vec2(dx, dy) / 1000.0;
+    
+    vec4 scene = texture2D(uSampler, duv);
+    
+    // Eau caraïbe
+    vec3 water = vec3(0.10, 0.32, 0.46);
+    float mixVal = 0.45 + sin(uv.x * 50.0 + uTime) * 0.05;
+    vec3 result = mix(scene.rgb, water, mixVal);
+    
+    // Reflets
+    float spec = sin(uv.x * 30.0 + uTime * 0.8) * cos(uv.y * 25.0 + uTime * 1.1) * 0.5 + 0.5;
+    result += spec * vec3(0.06, 0.10, 0.16);
+    
+    gl_FragColor = vec4(result, 1.0);
+}`;
+
 export class PixiRenderer implements IRenderer {
   private app!: Application; private world!: Container; private tiles!: Container; private blds!: Container;
   private shadows!: Container;
+  private waterFilter!: Filter;
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
@@ -24,9 +53,21 @@ export class PixiRenderer implements IRenderer {
     ct.appendChild(this.app.canvas);
 
     this.world = new Container(); this.tiles = new Container(); this.shadows = new Container(); this.blds = new Container();
-    // Ordre : tiles → shadows → buildings
     this.world.addChild(this.tiles, this.shadows, this.blds);
     this.app.stage.addChild(this.world);
+
+    // Water filter (post-processing sur tout le stage)
+    this.waterFilter = new Filter({
+      glProgram: {
+        vertex: undefined,
+        fragment: waterFrag,
+      } as any,
+      resources: {},
+    });
+    // Utiliser la propriété uniforms manuellement
+    (this.waterFilter as any)._uniforms = { uTime: 0 };
+    this.app.stage.filters = [this.waterFilter];
+
     this.setupEvents();
     this.loadAssets();
   }
@@ -80,6 +121,9 @@ export class PixiRenderer implements IRenderer {
   update(_dt: number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
     this.frame++;
+    if (this.waterFilter) {
+      (this.waterFilter as any)._uniforms.uTime = this.frame * 0.016;
+    }
   }
 
   centerOnWorld(w: number, h: number) {
@@ -101,7 +145,6 @@ export class PixiRenderer implements IRenderer {
 
   private addShadow(gx: number, gy: number, w: number, h: number) {
     const s = new Graphics();
-    // Ellipse pour un rendu plus naturel qu'un rectangle
     s.ellipse(gx + w/2 + 2, gy + h/2 + 3, w/2 + 1, h/3);
     s.fill({ color: 0x000000, alpha: 0.35 });
     this.shadows.addChild(s);
@@ -111,15 +154,8 @@ export class PixiRenderer implements IRenderer {
     if (!t.buildings.length) return;
     const b = t.buildings[0];
     const bx = b.gridX * TS, by = b.gridY * TS;
+    this.addShadow(bx, by, TS, TS);
 
-    // Ombre portée
-    if (b.defId === 'port') {
-      this.addShadow(bx, by, TS, TS);
-    } else {
-      this.addShadow(bx, by, TS, TS);
-    }
-
-    // Bâtiment
     if (b.defId === 'port') {
       const pt = this.tex.get('port');
       if (pt) {
