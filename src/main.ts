@@ -14,6 +14,7 @@ async function main() {
   if (!container) throw new Error('Missing #game-container');
 
   const renderer = new PixiRenderer();
+  renderer.onReady(() => engine.buildWorld()); // rafraîchir quand les sprites sont chargés
   const engine = new GameEngine(renderer, new IndexedDBStore(), new SimpleIslandGenerator(), new JsonDataLoader());
 
   await engine.init(container, Date.now());

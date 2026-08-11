@@ -11,6 +11,10 @@ export class PixiRenderer implements IRenderer {
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
   private tex = new Map<string, Texture>();
+  private onAssetsLoaded?: () => void;
+
+  /** Permet au moteur de s'enregistrer pour être notifié du chargement des assets. */
+  onReady(fn: () => void) { this.onAssetsLoaded = fn; }
 
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
@@ -20,20 +24,14 @@ export class PixiRenderer implements IRenderer {
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
     this.world.addChild(this.tiles, this.blds); this.app.stage.addChild(this.world);
     this.setupEvents();
-    // Lancer le chargement des assets
     this.loadAssets();
   }
 
   private async loadAssets() {
     try {
       this.tex.set('port', await Assets.load('/ponton-pirate.png'));
-      // Rafraîchir les bâtiments existants
-      if ((window as any).gameEngine) {
-        (window as any).gameEngine.buildWorld?.();
-      }
-    } catch(e) {
-      console.warn('Asset load failed:', e);
-    }
+      this.onAssetsLoaded?.();
+    } catch(e) { console.warn('Asset load failed:', e); }
   }
 
   private get rect() { return this.ct.getBoundingClientRect(); }
