@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Test Eau — Crique Corsaire</title>
+<style>body{margin:0;background:#111}#view{width:100vw;height:100vh}</style></head><body>
+<div id="view"></div>
+<script type="importmap">
+{ "imports": { "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.min.mjs" } }
+</script>
+<script type="module">
+import { Application, TilingSprite, Container, Assets } from 'pixi.js';
+
+const app = new Application();
+await app.init({ resizeTo: document.getElementById('view'), backgroundColor: 0x0a1628, antialias: false, resolution: 1, roundPixels: true });
+document.getElementById('view').appendChild(app.canvas);
+
+// Charger les deux textures
+const seabedTex = await Assets.load('/sprites/seabed.png');
+const waterTex = await Assets.load('/sprites/water_deep.png');
+
+// Couche 1 : fond marin
+const seabed = new TilingSprite({ texture: seabedTex, width: app.screen.width, height: app.screen.height });
+seabed.tileScale.set(0.5); // 32px → 16px tiles
+app.stage.addChild(seabed);
+
+// Couche 2 : eau (semi-transparente)
+const water = new TilingSprite({ texture: waterTex, width: app.screen.width, height: app.screen.height });
+water.tileScale.set(0.5);
+water.alpha = 0.65;
+app.stage.addChild(water);
+
+// Animation palette cycling simulée : faire osciller la teinte
+let frame = 0;
+app.ticker.add(() => {
+  frame++;
+  const cycle = Math.sin(frame * 0.02) * 0.5 + 0.5;
+  // Osciller entre bleu et légèrement plus clair
+  const r = Math.floor(13 + cycle * 8);
+  const g = Math.floor(59 + cycle * 15);
+  const b = Math.floor(102 + cycle * 20);
+  water.tint = (r << 16) | (g << 8) | b;
+  // Légère transparence variable
+  water.alpha = 0.6 + Math.sin(frame * 0.015) * 0.08;
+  
+  // Scroll lent
+  seabed.tilePosition.x = frame * 0.03;
+  seabed.tilePosition.y = frame * 0.02;
+  water.tilePosition.x = frame * 0.05;
+  water.tilePosition.y = frame * 0.03;
+});
+</script></body></html>
