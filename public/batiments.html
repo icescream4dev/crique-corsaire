@@ -49,8 +49,9 @@ try {
 }
 
 // Ajouter les tilesets d'eau à la liste
-buildings.push({ id:'seabed', name:'Fond marin', emoji:'🏖️', description:'Tileset isométrique 114×114', levels:[{displayName:'15 tuiles 3×5'}], spritePath:'/sprites/seabed.png' });
-buildings.push({ id:'water_deep', name:'Eau profonde', emoji:'🌊', description:'Overlay semi-transparent 114×114', levels:[{displayName:'15 tuiles 3×5'}], spritePath:'/sprites/water_deep.png' });
+buildings.push({ id:'seabed_v2', name:'Fond marin v2', emoji:'🏖️', description:'Texture 256×256', levels:[{displayName:'Fond marin varié'}], spritePath:'/sprites/seabed_v2.png' });
+buildings.push({ id:'water', name:'Eau Caraïbe', emoji:'🌊', description:'Overlay 200×200 semi-transparent', levels:[{displayName:'Eau profonde'}], spritePath:'/sprites/water.png' });
+buildings.push({ id:'foam', name:'Écume', emoji:'🫧', description:'Bande écume 160×160', levels:[{displayName:'Écume de rivage'}], spritePath:'/sprites/foam.png' });
 
 // Sprite cache
 const texCache = new Map();
