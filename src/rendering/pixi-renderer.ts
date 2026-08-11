@@ -95,7 +95,7 @@ export class PixiRenderer implements IRenderer {
       const pt = this.tex.get('port');
       if(pt){
         const s = new Sprite(pt);
-        s.x = bx*TS - TS*3; s.y = by*TS - TS*4; s.scale.set(0.25);
+        s.x = bx*TS - 32; s.y = by*TS - 40; s.scale.set(1); // sprite 128x128 sur tile 16x16
         this.blds.addChild(s);
       }
     } else {

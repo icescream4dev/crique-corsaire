@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bâtiments — Crique Corsaire</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a1628;color:#c8d6e5;font:14px monospace;display:flex;height:100vh}
+  #sidebar{width:260px;background:rgba(255,255,255,0.05);padding:12px;overflow-y:auto;border-right:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:6px}
+  #sidebar h2{color:#ffd700;margin-bottom:8px;font-size:16px}
+  .bld-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;padding:8px 10px;cursor:pointer;text-align:left;border-radius:4px;font:13px monospace;transition:all 0.15s}
+  .bld-btn:hover{background:rgba(255,255,255,0.15)}
+  .bld-btn.active{background:rgba(255,215,0,0.2);border-color:#ffd700}
+  .bld-btn .level{font-size:11px;color:#aaa;margin-top:3px}
+  #view{flex:1;position:relative}
+  #info{position:fixed;bottom:12px;left:272px;background:rgba(0,0,0,0.7);padding:8px 12px;border-radius:4px;font-size:12px;max-width:400px}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h2>🏴‍☠️ Bâtiments</h2>
+  <div id="building-list">Chargement...</div>
+</div>
+<div id="view"></div>
+<div id="info">Clique sur un bâtiment pour voir son sprite</div>
+<script type="importmap">
+{ "imports": { "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.min.mjs" } }
+</script>
+<script type="module">
+import { Application, Sprite, Assets, Graphics, Container, Text, TextStyle } from 'pixi.js';
+
+const app = new Application();
+await app.init({ resizeTo: document.getElementById('view'), backgroundColor: 0x0a1628, antialias: false, resolution: 1, roundPixels: true });
+document.getElementById('view').appendChild(app.canvas);
+
+const info = document.getElementById('info');
+const list = document.getElementById('building-list');
+
+// Load building definitions
+let buildings = [];
+try {
+  const resp = await fetch('/data/buildings/port.json');
+  buildings = [await resp.json()];
+  // TODO: charger tous les JSON du dossier
+} catch(e) {
+  list.textContent = 'Erreur: ' + e.message;
+}
+
+// Sprite cache
+const texCache = new Map();
+
+// Render building list
+list.innerHTML = '';
+for (const bld of buildings) {
+  const btn = document.createElement('button');
+  btn.className = 'bld-btn';
+  btn.innerHTML = `${bld.emoji} ${bld.name}<br><span class="level">${bld.levels[0]?.displayName || ''}</span>`;
+  btn.onclick = async () => {
+    // Highlight
+    list.querySelectorAll('.bld-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    
+    // Clear previous
+    app.stage.removeChildren();
+    info.textContent = `Chargement de ${bld.name}...`;
+    
+    // Determine sprite path
+    const spritePath = `/sprites/${bld.id}.png`; // par convention
+    const fallbackPath = `/ponton-pirate.png`; // fallback pour le port
+    
+    let tex = texCache.get(bld.id);
+    if (!tex) {
+      try {
+        tex = await Assets.load(fallbackPath); // utiliser le sprite existant
+        texCache.set(bld.id, tex);
+      } catch {
+        info.textContent = `❌ Impossible de charger le sprite pour ${bld.name}`;
+        return;
+      }
+    }
+    
+    // Background grid
+    const grid = new Graphics();
+    for (let x = 0; x < app.screen.width; x += 32) {
+      for (let y = 0; y < app.screen.height; y += 32) {
+        grid.rect(x, y, 32, 32);
+        grid.stroke({ width: 0.5, color: 0xffffff, alpha: 0.05 });
+      }
+    }
+    app.stage.addChild(grid);
+    
+    // Sprite
+    const s = new Sprite(tex);
+    s.anchor.set(0.5, 0.5);
+    s.x = app.screen.width / 2;
+    s.y = app.screen.height / 2;
+    s.scale.set(3); // zoom pour bien voir
+    app.stage.addChild(s);
+    
+    // Label
+    const label = new Text({
+      text: `${bld.emoji} ${bld.name}\n${bld.levels[0]?.displayName || 'Niveau 1'}`,
+      style: new TextStyle({ fontSize: 14, fill: '#ffd700', align: 'center', fontFamily: 'monospace' })
+    });
+    label.anchor.set(0.5, 0);
+    label.x = app.screen.width / 2;
+    label.y = app.screen.height / 2 + 100;
+    app.stage.addChild(label);
+    
+    info.textContent = `${bld.name} — ${bld.description}`;
+  };
+  list.appendChild(btn);
+}
+</script>
+</body>
+</html>
