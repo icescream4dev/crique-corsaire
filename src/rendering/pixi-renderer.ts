@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite, Assets, Texture, Filter } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets, Texture, Filter, RenderTexture } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
@@ -37,6 +37,8 @@ export class PixiRenderer implements IRenderer {
   private app!: Application; private world!: Container; private tiles!: Container; private blds!: Container;
   private shadows!: Container;
   private waterFilter!: Filter;
+  private waterSprite!: Sprite;
+  private sceneRT!: RenderTexture;
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
@@ -56,17 +58,20 @@ export class PixiRenderer implements IRenderer {
     this.world.addChild(this.tiles, this.shadows, this.blds);
     this.app.stage.addChild(this.world);
 
-    // Water filter (post-processing sur tout le stage)
+    // Scene capture texture
+    this.sceneRT = RenderTexture.create({ width: 1280, height: 1280 });
+
+    // Water filter (sur le sprite qui capture la scène)
     this.waterFilter = new Filter({
-      glProgram: {
-        vertex: undefined,
-        fragment: waterFrag,
-      } as any,
+      glProgram: { vertex: undefined, fragment: waterFrag } as any,
       resources: {},
     });
-    // Utiliser la propriété uniforms manuellement
     (this.waterFilter as any)._uniforms = { uTime: 0 };
-    this.app.stage.filters = [this.waterFilter];
+
+    this.waterSprite = new Sprite(this.sceneRT);
+    this.waterSprite.filters = [this.waterFilter];
+    this.waterSprite.width = this.sw; this.waterSprite.height = this.sh;
+    this.app.stage.addChild(this.waterSprite);
 
     this.setupEvents();
     this.loadAssets();
@@ -124,6 +129,12 @@ export class PixiRenderer implements IRenderer {
     if (this.waterFilter) {
       (this.waterFilter as any)._uniforms.uTime = this.frame * 0.016;
     }
+    // Capturer la scène → appliquer le filtre eau
+    const renderer = this.app.renderer;
+    renderer.render({ container: this.world, target: this.sceneRT, clear: true });
+    this.waterSprite.texture = this.sceneRT;
+    this.waterSprite.width = this.sw;
+    this.waterSprite.height = this.sh;
   }
 
   centerOnWorld(w: number, h: number) {
