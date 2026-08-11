@@ -95,7 +95,7 @@ export class PixiRenderer implements IRenderer {
       const pt = this.tex.get('port');
       if(pt){
         const s = new Sprite(pt);
-        s.x = bx - 32; s.y = by - 40; s.scale.set(1);
+        s.x = bx; s.y = by; s.scale.set(16/128); // fit dans la tuile 16×16
         this.blds.addChild(s);
       }
     } else {
