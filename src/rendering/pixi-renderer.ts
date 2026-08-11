@@ -5,23 +5,42 @@ import type { Tile } from '../core/types';
 const TS = 16; const ZS = 0.08; const ZMIN = 0.2; const ZMAX = 24;
 const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9, sand:0xf5deb3, palm:0x228b22, mountain:0x6b4226, cave:0x3d2b1f, cave_water:0x1a3a5c };
 
-/** Génère une texture d'eau animée (pixel art, palette cycling-like) */
-function makeWaterTexture(frame: number, color1: number, color2: number, size: number): Texture {
+/** Génère une texture d'eau animée (pixel art, multi-sinus pour organicité) */
+function makeWaterFrame(frame: number, seed: number, w: number, h: number): Texture {
   const c = document.createElement('canvas');
-  c.width = size; c.height = size;
+  c.width = w; c.height = h;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#' + color1.toString(16).padStart(6, '0');
-  ctx.fillRect(0, 0, size, size);
-  // Bandes de vagues pixel art
-  for (let y = 0; y < size; y++) {
-    const wave = Math.sin((y + frame * 1.5) * 0.6) * 2 + Math.sin((y + frame * 2) * 0.35) * 3;
-    for (let x = 0; x < size; x++) {
-      if ((x + Math.floor(wave) + y) % 3 === 0) {
-        ctx.fillStyle = '#' + color2.toString(16).padStart(6, '0');
-        ctx.fillRect(x, y, 1, 1);
-      }
+  const img = ctx.createImageData(w, h);
+  const fn = (x: number, y: number) => {
+    const n = Math.sin(x * 0.3 + y * 0.2 + frame * 0.5 + seed) * 0.5
+            + Math.sin(x * 0.15 - y * 0.35 + frame * 0.7 + seed * 2) * 0.3
+            + Math.sin(x * 0.6 + y * 0.5 + frame * 0.3 + seed * 3) * 0.2;
+    return n * 0.5 + 0.5; // 0..1
+  };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = fn(x, y);
+      const i = (y * w + x) * 4;
+      // Interpoler entre deep_water (0x1a5276) et highlight (0x2e86c1)
+      const r = Math.floor(26 + n * 20);
+      const g = Math.floor(82 + n * 52);
+      const b = Math.floor(118 + n * 75);
+      img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b;
+      img.data[i + 3] = 255;
     }
   }
+  // Ajouter quelques pixels d'écume aléatoire
+  for (let i = 0; i < w * h * 0.01; i++) {
+    const x = Math.floor(Math.random() * w);
+    const y = Math.floor(Math.random() * h);
+    const n = fn(x, y);
+    if (n > 0.78) {
+      const idx = (y * w + x) * 4;
+      img.data[idx] = img.data[idx + 1] = img.data[idx + 2] = 220 + Math.floor(n * 35);
+      img.data[idx + 3] = (n - 0.78) * 800;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
   return Texture.from(c);
 }
 
@@ -45,15 +64,16 @@ export class PixiRenderer implements IRenderer {
     await this.app.init({ resizeTo: ct, backgroundColor:0x1a5276, antialias:false, resolution:1, roundPixels:true });
     ct.appendChild(this.app.canvas);
     
-    // Générer 8 frames d'eau
+    // Générer 8 frames d'eau (2 couches × 4 seeds)
+    this.waterFrames = [];
     for (let f = 0; f < 8; f++) {
-      this.waterFrames.push(makeWaterTexture(f, 0x1a5276, 0x215d85, 64));
+      this.waterFrames.push(makeWaterFrame(f, 42, 128, 128));
     }
     
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
     this.waterDeep = new TilingSprite({ texture: this.waterFrames[0], width: 0, height: 0 });
-    this.waterShallow = new TilingSprite({ texture: this.waterFrames[0], width: 0, height: 0 });
-    this.waterShallow.alpha = 0.4;
+    this.waterShallow = new TilingSprite({ texture: this.waterFrames[4], width: 0, height: 0 });
+    this.waterShallow.alpha = 0.5;
     this.world.addChild(this.waterDeep, this.waterShallow, this.tiles, this.blds);
     this.app.stage.addChild(this.world);
     this.setupEvents();
@@ -109,14 +129,14 @@ export class PixiRenderer implements IRenderer {
   update(_dt:number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
     this.frame++;
-    // Animation eau : changer de frame toutes les 8 frames logicielles (~7.5 FPS)
-    const wf = Math.floor(this.frame / 8) % this.waterFrames.length;
+    // Animation eau : changer de frame toutes les 12 frames (~5 FPS), plus lent
+    const wf = Math.floor(this.frame / 12) % 8;
     this.waterDeep.texture = this.waterFrames[wf];
-    this.waterShallow.texture = this.waterFrames[(wf + 2) % this.waterFrames.length]; // décalé
+    this.waterShallow.texture = this.waterFrames[(wf + 3) % 8];
     // Scroll lent
-    this.waterDeep.tilePosition.x = this.frame * 0.2;
-    this.waterShallow.tilePosition.x = this.frame * 0.35;
-    this.waterShallow.tilePosition.y = this.frame * 0.1;
+    this.waterDeep.tilePosition.x = this.frame * 0.12;
+    this.waterShallow.tilePosition.x = this.frame * 0.2;
+    this.waterShallow.tilePosition.y = this.frame * 0.06;
   }
 
   centerOnWorld(w:number, h:number) {
