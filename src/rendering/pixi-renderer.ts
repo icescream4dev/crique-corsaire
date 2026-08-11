@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite, Assets, Texture, TilingSprite } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets, Texture } from 'pixi.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile } from '../core/types';
 
@@ -7,7 +7,7 @@ const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9,
 
 export class PixiRenderer implements IRenderer {
   private app!: Application; private world!: Container; private tiles!: Container; private blds!: Container;
-  private waterLayer!: TilingSprite;
+  private shadows!: Container;
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
@@ -23,12 +23,9 @@ export class PixiRenderer implements IRenderer {
     await this.app.init({ resizeTo: ct, backgroundColor: 0x1a5276, antialias: false, resolution: 1, roundPixels: true });
     ct.appendChild(this.app.canvas);
 
-    // Eau opaque (un seul TilingSprite)
-    this.waterLayer = new TilingSprite({ texture: Texture.WHITE, width: 0, height: 0 });
-    this.waterLayer.tint = 0x1a5276;
-
-    this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
-    this.world.addChild(this.waterLayer, this.tiles, this.blds);
+    this.world = new Container(); this.tiles = new Container(); this.shadows = new Container(); this.blds = new Container();
+    // Ordre : tiles → shadows → buildings
+    this.world.addChild(this.tiles, this.shadows, this.blds);
     this.app.stage.addChild(this.world);
     this.setupEvents();
     this.loadAssets();
@@ -83,25 +80,16 @@ export class PixiRenderer implements IRenderer {
   update(_dt: number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
     this.frame++;
-    // Eau opaque : léger scroll + palette cycling lent
-    this.waterLayer.tilePosition.x = Math.floor(this.frame * 0.03);
-    this.waterLayer.tilePosition.y = Math.floor(this.frame * 0.02);
-    const cycle = Math.sin(this.frame * 0.01) * 0.5 + 0.5;
-    const r = Math.floor(26 + cycle * 6);
-    const g = Math.floor(82 + cycle * 12);
-    const b = Math.floor(118 + cycle * 15);
-    this.waterLayer.tint = (r << 16) | (g << 8) | b;
   }
 
   centerOnWorld(w: number, h: number) {
-    this.ww = w; this.wh = h; const ww = w * TS, wh = h * TS;
-    this.zm = Math.min(1, this.sw / ww, this.sh / wh);
-    this.cx = this.sw / 2 - (ww / 2) * this.zm; this.cy = this.sh / 2 - (wh / 2) * this.zm;
-    this.waterLayer.width = ww; this.waterLayer.height = wh;
+    this.ww = w; this.wh = h;
+    this.zm = Math.min(1, this.sw / (w * TS), this.sh / (h * TS));
+    this.cx = this.sw / 2 - (w * TS / 2) * this.zm;
+    this.cy = this.sh / 2 - (h * TS / 2) * this.zm;
   }
 
   renderTile(t: Tile) {
-    if (t.terrain === 'deep_water' || t.terrain === 'shallow_water') return;
     if (!this.cache[t.y]) this.cache[t.y] = [];
     if (this.cache[t.y][t.x]) return;
     const g = new Graphics();
@@ -111,8 +99,27 @@ export class PixiRenderer implements IRenderer {
     this.tiles.addChild(g); this.cache[t.y][t.x] = g;
   }
 
+  private addShadow(gx: number, gy: number, w: number, h: number) {
+    const s = new Graphics();
+    // Ellipse pour un rendu plus naturel qu'un rectangle
+    s.ellipse(gx + w/2 + 2, gy + h/2 + 3, w/2 + 1, h/3);
+    s.fill({ color: 0x000000, alpha: 0.35 });
+    this.shadows.addChild(s);
+  }
+
   renderBuilding(t: Tile) {
-    if (!t.buildings.length) return; const b = t.buildings[0]; const bx = b.gridX * TS, by = b.gridY * TS;
+    if (!t.buildings.length) return;
+    const b = t.buildings[0];
+    const bx = b.gridX * TS, by = b.gridY * TS;
+
+    // Ombre portée
+    if (b.defId === 'port') {
+      this.addShadow(bx, by, TS, TS);
+    } else {
+      this.addShadow(bx, by, TS, TS);
+    }
+
+    // Bâtiment
     if (b.defId === 'port') {
       const pt = this.tex.get('port');
       if (pt) {
@@ -136,7 +143,7 @@ export class PixiRenderer implements IRenderer {
     return { x: tx, y: ty };
   }
 
-  clear() { this.cache = []; this.tiles.removeChildren(); this.blds.removeChildren(); }
+  clear() { this.cache = []; this.tiles.removeChildren(); this.shadows.removeChildren(); this.blds.removeChildren(); }
   onResize() { this.update(0); }
   renderPirate(_p: { x: number; y: number; emoji: string }) { }
 }
