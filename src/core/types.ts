@@ -92,6 +92,7 @@ export interface BuildingInstance {
   gridY: number;
   stackLevel: number;
   anchor: 'ground' | 'cliff' | 'cave' | 'stilts' | 'elevator' | 'ceiling';
+  orientation?: number;    // rotation en radians (0 = sud, π = nord, etc.)
   constructionProgress: number;
   operational: boolean;
   lights?: LightSource[];  // sources de lumière émises par ce bâtiment
