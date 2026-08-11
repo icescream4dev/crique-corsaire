@@ -101,9 +101,9 @@ export class GameEngine {
     const t = tile.terrain;
 
     if (defId === 'port') {
-      // shallow_water + terre au sud-est du port (le bâtiment est en bas à droite du sprite)
+      // shallow_water + terre au nord-ouest (le sprite a la connexion terre en haut)
       if (t !== 'shallow_water') return false;
-      for (const [dx, dy] of [[1,0],[0,1],[1,1]]) {
+      for (const [dx, dy] of [[-1,-1],[0,-1],[-1,0]]) {
         const nt = this.state.island.tiles[y+dy]?.[x+dx]?.terrain;
         if (nt && nt !== 'deep_water' && nt !== 'shallow_water') return true;
       }
