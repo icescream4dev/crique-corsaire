@@ -7,23 +7,27 @@ const C: Record<string, number> = { deep_water:0x1a5276, shallow_water:0x2980b9,
 
 export class PixiRenderer implements IRenderer {
   private app!: Application; private world!: Container; private tiles!: Container; private blds!: Container;
+  private waterLayer!: Graphics;
   private cx = 0; private cy = 0; private zm = 1; private ww = 0; private wh = 0; private ct!: HTMLElement;
   private drag = false; private dsx=0; private dsy=0; private dcx=0; private dcy=0; private pd=0; private pz=1;
   private cache: Graphics[][] = [];
   private tex = new Map<string, Texture>();
   private onAssetsLoaded?: () => void;
-  private anims: { update: (dt: number) => void }[] = [];
+  private waterTiles: {x:number;y:number;deep:boolean}[] = [];
+  private waterFrame = 0;
 
-  /** Permet au moteur de s'enregistrer pour être notifié du chargement des assets. */
   onReady(fn: () => void) { this.onAssetsLoaded = fn; }
 
   async init(ct: HTMLElement): Promise<void> {
     this.ct = ct;
     this.app = new Application();
-    await this.app.init({ resizeTo: ct, backgroundColor:0x0a1628, antialias:false, resolution:1, roundPixels:true });
+    await this.app.init({ resizeTo: ct, backgroundColor:0x1a5276, antialias:false, resolution:1, roundPixels:true });
     ct.appendChild(this.app.canvas);
     this.world = new Container(); this.tiles = new Container(); this.blds = new Container();
-    this.world.addChild(this.tiles, this.blds); this.app.stage.addChild(this.world);
+    this.waterLayer = new Graphics();
+    // Ordre : eau animée → terrain → bâtiments
+    this.world.addChild(this.waterLayer, this.tiles, this.blds);
+    this.app.stage.addChild(this.world);
     this.setupEvents();
     this.loadAssets();
   }
@@ -76,9 +80,43 @@ export class PixiRenderer implements IRenderer {
 
   update(_dt:number) {
     this.world.scale.set(this.zm); this.world.x = this.cx; this.world.y = this.cy;
-    for (const a of this.anims) a.update(_dt);
-    const h = document.getElementById('hud');
-    if (h) h.textContent = `🏴‍☠️ Crique Corsaire`;
+    this.waterFrame++;
+    this.drawWater();
+  }
+
+  private drawWater() {
+    const g = this.waterLayer;
+    g.clear();
+    const f = this.waterFrame * 0.02;
+    const WW = this.ww * TS, WH = this.wh * TS;
+
+    // Fond eau profonde
+    g.rect(0, 0, WW, WH); g.fill(0x1a5276);
+
+    // Vagues : bandes horizontales qui défilent
+    for (let y = 0; y < WH; y += 3) {
+      const wave = Math.sin(y * 0.3 + f * 1.2) * 2 + Math.sin(y * 0.15 + f * 0.7) * 4;
+      const alpha = 0.08 + Math.abs(Math.sin(y * 0.2 + f)) * 0.06;
+      g.rect(wave, y, WW, 2); g.fill({color:0x2980b9, alpha});
+    }
+
+    // Surbrillance (reflets)
+    for (let y = 0; y < WH; y += 5) {
+      const wave = Math.sin(y * 0.4 + f * 1.8) * 3;
+      if ((y + Math.floor(f * 3)) % 10 < 3) {
+        g.rect(wave, y, WW, 1); g.fill({color:0x3498db, alpha:0.12});
+      }
+    }
+
+    // Shallow water par-dessus
+    for (const wt of this.waterTiles) {
+      const x = wt.x * TS, y = wt.y * TS;
+      const wave = Math.sin(y * 0.5 + f * 1.5) * 1.5 + Math.sin(x * 0.3 + f) * 1;
+      g.rect(x + wave, y, TS, TS);
+      g.fill({color:0x2980b9, alpha:0.5});
+      // Bordure scintillante
+      g.rect(x, y, TS, TS); g.stroke({width:0.5, color:0x3498db, alpha:0.2});
+    }
   }
 
   centerOnWorld(w:number, h:number) {
@@ -87,32 +125,30 @@ export class PixiRenderer implements IRenderer {
     this.cx = this.sw/2 - (ww/2)*this.zm; this.cy = this.sh/2 - (wh/2)*this.zm;
   }
 
-  renderTile(t:Tile){ if(!this.cache[t.y])this.cache[t.y]=[]; if(this.cache[t.y][t.x])return; const g=new Graphics(); g.rect(t.x*TS,t.y*TS,TS,TS); g.fill(C[t.terrain]??0x333333); g.stroke({width:.5,color:0,alpha:.1}); this.tiles.addChild(g); this.cache[t.y][t.x]=g; }
+  renderTile(t:Tile){
+    // Stocker les tuiles d'eau pour l'animation
+    if (t.terrain === 'deep_water' || t.terrain === 'shallow_water') {
+      this.waterTiles.push({x:t.x, y:t.y, deep: t.terrain==='deep_water'});
+      return;
+    }
+    // Terrain statique (cache)
+    if(!this.cache[t.y])this.cache[t.y]=[];
+    if(this.cache[t.y][t.x])return;
+    const g=new Graphics();
+    g.rect(t.x*TS,t.y*TS,TS,TS); g.fill(C[t.terrain]??0x333333);
+    g.stroke({width:.5,color:0,alpha:.1});
+    this.tiles.addChild(g); this.cache[t.y][t.x]=g;
+  }
 
   renderBuilding(t:Tile){
     if(!t.buildings.length)return; const b=t.buildings[0]; const bx=b.gridX*TS, by=b.gridY*TS;
     if(b.defId==='port'){
       const pt = this.tex.get('port');
       if(pt){
-        const container = new Container();
-        container.x = bx+TS/2; container.y = by+TS/2;
         const s = new Sprite(pt);
-        s.anchor.set(0.5); s.scale.set(16/200);
-        container.addChild(s);
-        // Lanterne glow animée
-        const glow = new Graphics();
-        glow.circle(0, 0, 3); glow.fill({color:0xffaa00, alpha:0.6});
-        container.addChild(glow);
-        const start = Date.now();
-        this.anims.push({
-          update: (_dt: number) => {
-            const t = (Date.now() - start) * 0.003;
-            glow.alpha = 0.3 + Math.sin(t * 2) * 0.2 + Math.sin(t * 5) * 0.1;
-            // Légère ondulation du drapeau via skew
-            s.skew.x = Math.sin(t * 1.5) * 0.02;
-          }
-        });
-        this.blds.addChild(container);
+        s.x = bx+TS/2; s.y = by+TS/2; s.scale.set(16/200);
+        s.anchor.set(0.5);
+        this.blds.addChild(s);
       }
     } else {
       const g = new Graphics();
@@ -130,7 +166,7 @@ export class PixiRenderer implements IRenderer {
     return { x: tx, y: ty };
   }
 
-  clear(){ this.cache=[]; this.tiles.removeChildren(); this.blds.removeChildren(); }
+  clear(){ this.cache=[]; this.tiles.removeChildren(); this.blds.removeChildren(); this.waterTiles=[]; this.waterLayer.clear(); }
   onResize(){ this.update(0); }
   renderPirate(_p:{x:number;y:number;emoji:string}){}
 }
