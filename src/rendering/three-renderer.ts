@@ -81,7 +81,7 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
       fbm(p + 3.0 * q + vec2(8.3, 2.8) + t * 0.12)
     );
     float n = fbm(p + 3.0 * r);
-    return smoothstep(0.58, 0.66, n);
+    return smoothstep(0.66, 0.76, n);
   }
 `;
 
