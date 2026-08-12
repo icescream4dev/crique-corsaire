@@ -501,8 +501,7 @@ export class ThreeRenderer implements IRenderer {
         midColor: { value: new THREE.Color(0x17a2b8) },     // bleu turquoise
         deepColor: { value: new THREE.Color(0x1a5276) },    // bleu profond
         abyssColor: { value: new THREE.Color(0x0d2b4a) },   // bleu nuit
-        cloudColor: { value: new THREE.Color(0x3a1f6e) },   // violet ombre nuage
-        cloudScale: { value: 0.3 },                        // échelle (nuages 2× plus grands)
+        cloudScale: { value: 0.3 },                        // échelle (nuages 4× plus grands)
         cloudSpeed: { value: 0.3 },                        // vitesse défilement
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
@@ -537,7 +536,6 @@ export class ThreeRenderer implements IRenderer {
         uniform vec3 midColor;
         uniform vec3 deepColor;
         uniform vec3 abyssColor;
-        uniform vec3 cloudColor;
         uniform float cloudScale;
         uniform float cloudSpeed;
         uniform float uNear;
@@ -695,16 +693,16 @@ export class ThreeRenderer implements IRenderer {
           if (mainShadow > 0.01) {
             vec3 hsv = rgb2hsv(color);
             if (abs(mainShadow - 0.92) < 0.015) {
-              hsv.x = 0.90;                                  // liseré rosé
-              hsv.y *= 0.55;
-              hsv.z *= 1.25;
+              hsv.x = 0.93;                                  // liseré rosé poudré
+              hsv.z *= 0.45;                                 // assombrit
             } else if (abs(mainShadow - 0.50) < 0.015) {
               hsv.x = 0.42;                                  // liseré vert émeraude
-              hsv.y *= 0.70;
-              hsv.z *= 1.15;
+              hsv.z *= 0.55;                                 // assombrit
             } else {
-              // noir : juste assombrir, teinte d'origine
-              hsv.z *= mix(0.50, 0.10, mainShadow);
+              // rose poudré très clair + éclaircir
+              hsv.x = 0.93;
+              hsv.y *= 0.35;                                  // très désaturé
+              hsv.z *= mix(1.10, 1.60, mainShadow);           // 1.1 bord → 1.6 centre
             }
             color = hsv2rgb(hsv);
           }
