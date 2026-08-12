@@ -502,6 +502,8 @@ export class ThreeRenderer implements IRenderer {
         deepColor: { value: new THREE.Color(0x1a5276) },    // bleu profond
         abyssColor: { value: new THREE.Color(0x0d2b4a) },   // bleu nuit
         cloudColor: { value: new THREE.Color(0x3a1f6e) },   // violet ombre nuage
+        cloudScale: { value: 1.2 },                        // échelle (période ~0.8u ≈ 1-2 tuiles)
+        cloudSpeed: { value: 0.3 },                        // vitesse défilement
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
       },
@@ -536,6 +538,8 @@ export class ThreeRenderer implements IRenderer {
         uniform vec3 deepColor;
         uniform vec3 abyssColor;
         uniform vec3 cloudColor;
+        uniform float cloudScale;
+        uniform float cloudSpeed;
         uniform float uNear;
         uniform float uFar;
         uniform float time;
@@ -569,6 +573,49 @@ export class ThreeRenderer implements IRenderer {
           return minDist;
         }
 
+        // --- Fonctions de bruit pour ombres nuages ---
+        float hash21(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+
+        float noise2D(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f); // smoothstep
+          return mix(
+            mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+            mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
+            f.y
+          );
+        }
+
+        float fbm(vec2 p) {
+          float v = 0.0, a = 0.5, fr = 1.0;
+          for (int i = 0; i < 4; i++) {
+            v += a * noise2D(p * fr);
+            fr *= 2.0;
+            a *= 0.5;
+          }
+          return v;
+        }
+
+        // Ombres nuages style Monkey Island 3 : volutes en escargot via double domain warping
+        float cloudShadow(vec2 p, float t) {
+          // Étape 1 : warping primaire — déplace les features par du bruit
+          vec2 q = vec2(
+            fbm(p + vec2(0.0, 0.0) + t * 0.3),
+            fbm(p + vec2(5.2, 1.3) + t * 0.2)
+          );
+          // Étape 2 : warping croisé — torsion en escargot
+          vec2 r = vec2(
+            fbm(p + 3.0 * q + vec2(1.7, 9.2) + t * 0.15),
+            fbm(p + 3.0 * q + vec2(8.3, 2.8) + t * 0.12)
+          );
+          float n = fbm(p + 3.0 * r);
+          // Seuil pour bords nets cartoon (moins de nuages)
+          return smoothstep(0.50, 0.65, n);
+        }
+
         void main() {
           vec3 ndc = vScreenPos.xyz / vScreenPos.w;
           vec2 uv = ndc.xy * 0.5 + 0.5;
@@ -576,9 +623,20 @@ export class ThreeRenderer implements IRenderer {
           float groundZNdc = texture(sceneDepth, uv).r;   // [0,1] depth buffer
           float waterZNdc = (ndc.z + 1.0) / 2.0;           // convertir NDC[-1,1] → depth buffer [0,1]
 
-          // Terrain au-dessus de l'eau → pas d'effet
+          // Terrain au-dessus de l'eau → pas d'effet eau, mais ombres nuages
           if (groundZNdc < waterZNdc) {
-            gl_FragColor = texture(sceneColor, uv);
+            vec3 dryColor = texture(sceneColor, uv).rgb;
+            
+            float mainShadow = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
+            float arabesque = cloudShadow(vWorldPos.xz * cloudScale * 3.5, time * cloudSpeed * 1.7);
+            
+            vec3 darkColor = vec3(0.03, 0.07, 0.04);
+            vec3 pinkLight = vec3(0.55, 0.28, 0.35);
+            
+            dryColor = mix(dryColor, darkColor, mainShadow * 0.50);
+            dryColor = mix(dryColor, pinkLight, arabesque * 0.07);
+            
+            gl_FragColor = vec4(dryColor, 1.0);
             return;
           }
 
@@ -625,6 +683,20 @@ export class ThreeRenderer implements IRenderer {
 
           // Palette shift : remplacer par la couleur plus claire
           color = mix(color, midColor, fleckMask * openSeaMask * 0.6);
+
+          // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
+          
+          // Zone principale : volutes qui assombrissent
+          float mainShadow = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
+          
+          // Arabesques fines rosées qui illuminent (3.5× plus petites)
+          float arabesque = cloudShadow(vWorldPos.xz * cloudScale * 3.5, time * cloudSpeed * 1.7);
+          
+          vec3 darkColor = vec3(0.03, 0.07, 0.04);          // ombre très sombre
+          vec3 pinkLight = vec3(0.55, 0.28, 0.35);          // arabesques rosées
+          
+          color = mix(color, darkColor, mainShadow * 0.50);
+          color = mix(color, pinkLight, arabesque * 0.07);
 
           gl_FragColor = vec4(color, 1.0);
         }`,
