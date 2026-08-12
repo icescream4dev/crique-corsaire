@@ -798,7 +798,7 @@ export class ThreeRenderer implements IRenderer {
         cloudSpeed: { value: 0.003125 },
         // Décalage ombre (constant, soleil directionnel) — voir reference-lumiere-ombres-reflets.md
         cloudOffset: { value: SHADOW_OFFSET.clone() },
-        uShadowStrength: { value: 0.65 },                    // assombrissement max au centre
+        uShadowStrength: { value: 0.42 },                    // assombrissement max au centre
         time: { value: 0 },
       },
       vertexShader: /* glsl */ `
