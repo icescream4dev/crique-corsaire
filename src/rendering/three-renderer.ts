@@ -501,6 +501,7 @@ export class ThreeRenderer implements IRenderer {
         midColor: { value: new THREE.Color(0x17a2b8) },     // bleu turquoise
         deepColor: { value: new THREE.Color(0x1a5276) },    // bleu profond
         abyssColor: { value: new THREE.Color(0x0d2b4a) },   // bleu nuit
+        cloudColor: { value: new THREE.Color(0x3a1f6e) },   // violet ombre nuage
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
       },
@@ -534,8 +535,10 @@ export class ThreeRenderer implements IRenderer {
         uniform vec3 midColor;
         uniform vec3 deepColor;
         uniform vec3 abyssColor;
+        uniform vec3 cloudColor;
         uniform float uNear;
         uniform float uFar;
+        uniform float time;
 
         varying vec3 vWorldPos;
         varying vec4 vScreenPos;
@@ -543,6 +546,27 @@ export class ThreeRenderer implements IRenderer {
         // Convertit la profondeur NDC [0,1] en distance monde (linéaire en ortho)
         float linearDepth(float zNdc) {
           return uNear + zNdc * (uFar - uNear);
+        }
+
+        // Hash pour Voronoï
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+
+        // Voronoï simplifié : distance au point le plus proche dans une grille 3×3
+        float voronoi(vec2 uv) {
+          vec2 cell = floor(uv);
+          vec2 local = fract(uv);
+          float minDist = 1.0;
+          for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
+              vec2 neighbor = vec2(float(x), float(y));
+              vec2 point = vec2(hash(cell + neighbor), hash(cell + neighbor + 0.1));
+              float dist = length(neighbor + point - local);
+              minDist = min(minDist, dist);
+            }
+          }
+          return minDist;
         }
 
         void main() {
@@ -581,6 +605,26 @@ export class ThreeRenderer implements IRenderer {
           // Écume très fine sur les berges
           float foam = 1.0 - smoothstep(0.02, 0.06, waterDepth);
           color = mix(color, vec3(0.96, 0.97, 1.0), foam * 0.25);
+
+          // Clapotis au large : Voronoï étiré iso, stop-motion, open sea only
+          float retroTime = floor(time * 8.0) / 8.0; // 8 FPS
+
+          // UV étirés en isométrique, ×15 plus petit
+          vec2 waveUV = vec2(vWorldPos.x * 9.0, vWorldPos.z * 45.0);
+
+          // Double couche défilante à vitesses différentes
+          float n1 = voronoi(waveUV + vec2(retroTime * 0.005, retroTime * 0.003));
+          float n2 = voronoi(waveUV * 1.3 + vec2(-retroTime * 0.003, retroTime * 0.004));
+          float noiseVal = n1 * 0.7 + n2 * 0.3; // couche principale dominante
+
+          // Seuillage très strict
+          float fleckMask = step(0.75, noiseVal);
+
+          // Autorisé dès 15 cm (après l'écume qui s'arrête à 6 cm)
+          float openSeaMask = step(0.15, waterDepth);
+
+          // Palette shift : remplacer par la couleur plus claire
+          color = mix(color, midColor, fleckMask * openSeaMask * 0.6);
 
           gl_FragColor = vec4(color, 1.0);
         }`,
