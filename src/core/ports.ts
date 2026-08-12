@@ -10,10 +10,8 @@ export interface IRenderer {
   init(container: HTMLElement): Promise<void>;
   centerOnWorld(worldW: number, worldH: number): void;
   update(dt: number): void;
-  renderTile(tile: Tile): void;
   renderBuilding(tile: Tile): void;
-  renderPirate(pirate: { x: number; y: number; emoji: string }): void;
-  /** Construit le monde en une seule passe (remplace le renderTile itératif pour le 3D). */
+  /** Construit le monde en une seule passe (terrain + eau). */
   renderWorld(island: IslandData): void;
   clear(): void;
   onResize(): void;

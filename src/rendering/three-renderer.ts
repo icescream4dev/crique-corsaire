@@ -361,8 +361,6 @@ export class ThreeRenderer implements IRenderer {
 
   // --- Terrain ---
 
-  renderTile(_tile: Tile): void { /* no-op — le terrain est construit en une passe */ }
-
   buildTerrain(tiles: Tile[][]): void {
     if (this.terrainMesh) {
       this.terrainMesh.geometry.dispose();
@@ -636,11 +634,8 @@ export class ThreeRenderer implements IRenderer {
           float groundZNdc = texture(sceneDepth, uv).r;   // [0,1] depth buffer
           float waterZNdc = (ndc.z + 1.0) / 2.0;           // convertir NDC[-1,1] → depth buffer [0,1]
 
-          // Terrain au-dessus de l'eau → pas d'effet eau
-          if (groundZNdc < waterZNdc) {
-            gl_FragColor = texture(sceneColor, uv);
-            return;
-          }
+          // L'occlusion terrain/eau est gérée par le depth test GPU : le water shader
+          // ne s'exécute que là où l'eau est visible (jamais devant le terrain).
 
           // Profondeur en unités monde
           float groundDist = linearDepth(groundZNdc);
@@ -807,6 +802,4 @@ export class ThreeRenderer implements IRenderer {
     this.sceneRT.setSize(w, h);
     this.updateCamera();
   }
-
-  renderPirate(_p: { x: number; y: number; emoji: string }): void {}
 }
