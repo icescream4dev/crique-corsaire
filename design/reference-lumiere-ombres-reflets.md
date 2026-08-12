@@ -66,16 +66,19 @@ Convention d'orientation : position `(40,50,-10)` = **nord-ouest** → la lumiè
 
 ## 4. Nuages (champ 2D)
 
-Les nuages n'ont **pas de mesh visible** : ce sont un champ de bruit 2D défini sur le plan XZ (world-space), partagé entre le reflet et l'ombre.
+Les nuages sont un champ de bruit 2D défini sur le plan XZ (world-space), échantillonné à **trois endroits** : le nuage visible, son reflet et son ombre.
 
 - Fonction : `cloudShadow(p, t)` — FBM double domain warping, `smoothstep(0.62, 0.72)` → ~5 % de couverture.
 - Échelle : `cloudScale = 0,3` → une volute ≈ `1 / 0,3` = **3,33 unités** = **6,7 tuiles** = **67 m**.
-- Défilement : `cloudSpeed = 0,3` ; temps synchronisé (`this.cloudTime` partagé eau/ombre).
+- Défilement : `cloudSpeed = 0,3` ; temps synchronisé (`this.cloudTime` partagé eau/ombre/nuage).
 - **Hauteur des nuages** `h` = **30 m** = **1,5 unité** (choix stylisé, paramètre central).
 
-Le même champ est échantillonné à **deux positions différentes** :
-- **reflet** (eau) : projection via réflexion miroir (dépend de la caméra),
-- **ombre** (terre + eau) : projection via la lumière (dépend du soleil).
+Les **trois** occurrences du même champ :
+1. **nuage visible** (v10.10) : plan horizontal à `Y = h`, rendu blanc — la référence visuelle qui relie reflet et ombre.
+2. **reflet** (eau) : projection via réflexion miroir (dépend de la caméra).
+3. **ombre** (terre + eau) : projection via la lumière (dépend du soleil).
+
+**Ordre de rendu / hauteurs :** terrain (0, Y≤0,6) → eau (1, Y=0) → ombre (2, Y=0,8) → nuage (3, Y=1,5). Le nuage est au-dessus, son ombre en dessous ; le reflet est appliqué dans le water shader.
 
 ---
 
