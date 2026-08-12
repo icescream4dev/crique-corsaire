@@ -694,8 +694,14 @@ export class ThreeRenderer implements IRenderer {
           float mainShadow = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
           if (mainShadow > 0.01) {
             vec3 hsv = rgb2hsv(color);
-            hsv.x = 0.50;                                    // vert turquoise pur
-            hsv.z *= mix(0.60, 0.20, mainShadow);             // 0.2 au centre, 0.6 au bord
+            if (abs(mainShadow - 0.92) < 0.015) {
+              hsv.x = 0.90;                                  // rosé
+              hsv.y *= 0.55;                                  // mi-saturé
+              hsv.z *= 1.25;
+            } else {
+              hsv.x = 0.50;                                  // vert turquoise
+              hsv.z *= mix(0.60, 0.20, mainShadow);
+            }
             color = hsv2rgb(hsv);
           }
 
