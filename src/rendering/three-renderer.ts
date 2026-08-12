@@ -81,7 +81,7 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
       fbm(p + 3.0 * q + vec2(8.3, 2.8) + t * 0.12)
     );
     float n = fbm(p + 3.0 * r);
-    return smoothstep(0.66, 0.76, n);
+    return smoothstep(0.70, 0.78, n);
   }
 `;
 
@@ -599,7 +599,7 @@ export class ThreeRenderer implements IRenderer {
         midColor: { value: new THREE.Color(0x17a2b8) },     // bleu turquoise
         deepColor: { value: new THREE.Color(0x1a5276) },    // bleu profond
         abyssColor: { value: new THREE.Color(0x0d2b4a) },   // bleu nuit
-        cloudScale: { value: 0.3 },                        // échelle (nuages 4× plus grands)
+        cloudScale: { value: 0.1 },                        // échelle (nuages très grands, peu nombreux)
         cloudSpeed: { value: 0.2 },                        // vitesse défilement
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
@@ -794,7 +794,7 @@ export class ThreeRenderer implements IRenderer {
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        cloudScale: { value: 0.3 },                          // identique au water shader
+        cloudScale: { value: 0.1 },                          // identique au water shader
         cloudSpeed: { value: 0.2 },
         // Décalage ombre (constant, soleil directionnel) — voir reference-lumiere-ombres-reflets.md
         cloudOffset: { value: SHADOW_OFFSET.clone() },
@@ -847,7 +847,7 @@ export class ThreeRenderer implements IRenderer {
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        cloudScale: { value: 0.3 },   // identique reflet/ombre
+        cloudScale: { value: 0.1 },   // identique reflet/ombre
         cloudSpeed: { value: 0.2 },
         time: { value: 0 },
       },
