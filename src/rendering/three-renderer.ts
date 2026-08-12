@@ -739,7 +739,10 @@ export class ThreeRenderer implements IRenderer {
       uniforms: {
         cloudScale: { value: 0.3 },                          // identique au water shader
         cloudSpeed: { value: 0.3 },
-        cloudOffset: { value: new THREE.Vector2(-3.0, 3.0) }, // ombre décalée (sud-est, cohérent soleil NO)
+        // Décalage ombre = hauteur nuage × cotan(élévation soleil). Soleil (40,50,-10)
+        // → élévation ~50.5°, direction horizontale (-0.97, +0.24) = ratio 4:1 (X:Z).
+        // Nuage à ~30m → ΔX ≈ -2.4 tuiles, ΔZ ≈ +0.6 tuiles → (-1.2, +0.3) unités monde.
+        cloudOffset: { value: new THREE.Vector2(-1.2, 0.3) },
         uShadowStrength: { value: 0.40 },                    // assombrissement max au centre
         time: { value: 0 },
       },
