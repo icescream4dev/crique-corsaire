@@ -437,9 +437,11 @@ export class ThreeRenderer implements IRenderer {
     const colors = new Float32Array((W + 1) * (H + 1) * 3);
     const positions = geo.attributes.position;
     const heightGrid: number[][] = [];
+    const colorGrid: [number, number, number][][] = [];
 
     for (let gy = 0; gy <= H; gy++) {
       heightGrid[gy] = [];
+      colorGrid[gy] = [];
       for (let gx = 0; gx <= W; gx++) {
         const samples: Tile[] = [];
         if (gy < H && gx < W) samples.push(tiles[gy][gx]);
@@ -451,30 +453,35 @@ export class ThreeRenderer implements IRenderer {
         const h = samples.length > 0 ? this.getHeight(samples[0]) : 0;
 
         heightGrid[gy][gx] = h * HEIGHT_SCALE;
-        const idx = (gy * (W + 1) + gx) * 3;
-        colors[idx] = color.r;
-        colors[idx + 1] = color.g;
-        colors[idx + 2] = color.b;
+        colorGrid[gy][gx] = [color.r, color.g, color.b];
       }
     }
 
-    // Lissage de la heightmap (box blur 3×3, 2 passes) pour des pentes progressives
+    // Lissage de la heightmap ET des vertex colors (box blur 3×3, 3 passes)
+    // pour des pentes progressives ET des transitions de couleur douces (sinon les
+    // couleurs par tuile créent des bords rectilignes qui ressortent dans reflet/ombre/nuage).
     for (let pass = 0; pass < 3; pass++) {
-      const smoothed: number[][] = [];
+      const smoothedH: number[][] = [];
+      const smoothedC: [number, number, number][][] = [];
       for (let gy = 0; gy <= H; gy++) {
-        smoothed[gy] = [];
+        smoothedH[gy] = [];
+        smoothedC[gy] = [];
         for (let gx = 0; gx <= W; gx++) {
           let sum = 0, count = 0;
+          let r = 0, g = 0, b = 0;
           for (let dy = -1; dy <= 1; dy++) {
             for (let dx = -1; dx <= 1; dx++) {
               const sy = gy + dy, sx = gx + dx;
               if (sy >= 0 && sy <= H && sx >= 0 && sx <= W) {
                 sum += heightGrid[sy][sx];
+                const c = colorGrid[sy][sx];
+                r += c[0]; g += c[1]; b += c[2];
                 count++;
               }
             }
           }
-          smoothed[gy][gx] = sum / count;
+          smoothedH[gy][gx] = sum / count;
+          smoothedC[gy][gx] = [r / count, g / count, b / count];
         }
       }
       // Ne lisser que les zones non-falaise (montagne = garder raide)
@@ -483,7 +490,8 @@ export class ThreeRenderer implements IRenderer {
           const orig = heightGrid[gy][gx];
           // Garder les montagnes raides (hauteur > 0.3 → falaise)
           if (orig > 0.3) continue;
-          heightGrid[gy][gx] = smoothed[gy][gx];
+          heightGrid[gy][gx] = smoothedH[gy][gx];
+          colorGrid[gy][gx] = smoothedC[gy][gx];
         }
       }
     }
@@ -499,6 +507,17 @@ export class ThreeRenderer implements IRenderer {
     }
     positions.needsUpdate = true;
     geo.computeVertexNormals();
+
+    // Écrire les couleurs lissées dans le buffer
+    for (let gy = 0; gy <= H; gy++) {
+      for (let gx = 0; gx <= W; gx++) {
+        const idx = (gy * (W + 1) + gx) * 3;
+        const c = colorGrid[gy][gx];
+        colors[idx] = c[0];
+        colors[idx + 1] = c[1];
+        colors[idx + 2] = c[2];
+      }
+    }
 
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
