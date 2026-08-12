@@ -70,6 +70,9 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
 // Géométrie lumière/caméra — voir design/reference-lumiere-ombres-reflets.md
 const CLOUD_HEIGHT = 1.5; // hauteur nuage en unités monde (30 m)
 const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT); // (-1.2, +0.3)
+// L'eau, l'ombre et les nuages sont étendus au-delà de la carte (l'océan continue),
+// sinon leur bord rectiligne est visible quand on panne/dézoome vers le bord du monde.
+const WORLD_EXTEND = 4;
 
 export class ThreeRenderer implements IRenderer {
   // Three.js core
@@ -565,7 +568,7 @@ export class ThreeRenderer implements IRenderer {
 
     const worldW = w * TS;
     const worldH = h * TS;
-    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
+    const geo = new THREE.PlaneGeometry(worldW * WORLD_EXTEND, worldH * WORLD_EXTEND, 1, 1);
     geo.rotateX(-Math.PI / 2);
 
     const mat = new THREE.ShaderMaterial({
@@ -768,7 +771,7 @@ export class ThreeRenderer implements IRenderer {
 
     const worldW = w * TS;
     const worldH = h * TS;
-    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
+    const geo = new THREE.PlaneGeometry(worldW * WORLD_EXTEND, worldH * WORLD_EXTEND, 1, 1);
     geo.rotateX(-Math.PI / 2);
 
     const mat = new THREE.ShaderMaterial({
@@ -821,7 +824,7 @@ export class ThreeRenderer implements IRenderer {
 
     const worldW = w * TS;
     const worldH = h * TS;
-    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
+    const geo = new THREE.PlaneGeometry(worldW * WORLD_EXTEND, worldH * WORLD_EXTEND, 1, 1);
     geo.rotateX(-Math.PI / 2);
 
     const mat = new THREE.ShaderMaterial({
