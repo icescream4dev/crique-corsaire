@@ -613,7 +613,22 @@ export class ThreeRenderer implements IRenderer {
           );
           float n = fbm(p + 3.0 * r);
           // Seuil pour bords nets cartoon (moins de nuages)
-          return smoothstep(0.50, 0.65, n);
+          return smoothstep(0.57, 0.69, n);
+        }
+
+        // RGB → HSV
+        vec3 rgb2hsv(vec3 c) {
+          vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+          vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+          vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+          float d = q.x - min(q.w, q.y);
+          return vec3(abs(q.z + (q.w-q.y)/(6.0*d+1e-10)), d/(q.x+1e-10), q.x);
+        }
+
+        // HSV → RGB
+        vec3 hsv2rgb(vec3 c) {
+          vec3 rgb = clamp(abs(fract(c.x+vec3(1.0,2.0/3.0,1.0/3.0))*6.0-3.0)-1.0, 0.0, 1.0);
+          return c.z * mix(vec3(1.0), rgb, c.y);
         }
 
         void main() {
@@ -623,20 +638,9 @@ export class ThreeRenderer implements IRenderer {
           float groundZNdc = texture(sceneDepth, uv).r;   // [0,1] depth buffer
           float waterZNdc = (ndc.z + 1.0) / 2.0;           // convertir NDC[-1,1] → depth buffer [0,1]
 
-          // Terrain au-dessus de l'eau → pas d'effet eau, mais ombres nuages
+          // Terrain au-dessus de l'eau → pas d'effet eau
           if (groundZNdc < waterZNdc) {
-            vec3 dryColor = texture(sceneColor, uv).rgb;
-            
-            float mainShadow = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
-            float arabesque = cloudShadow(vWorldPos.xz * cloudScale * 3.5, time * cloudSpeed * 1.7);
-            
-            vec3 darkColor = vec3(0.03, 0.07, 0.04);
-            vec3 pinkLight = vec3(0.55, 0.28, 0.35);
-            
-            dryColor = mix(dryColor, darkColor, mainShadow * 0.50);
-            dryColor = mix(dryColor, pinkLight, arabesque * 0.07);
-            
-            gl_FragColor = vec4(dryColor, 1.0);
+            gl_FragColor = texture(sceneColor, uv);
             return;
           }
 
@@ -686,17 +690,14 @@ export class ThreeRenderer implements IRenderer {
 
           // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
           
-          // Zone principale : volutes qui assombrissent
+          // Ombre nuage : HSV (teinte décorrélée de la luminosité)
           float mainShadow = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
-          
-          // Arabesques fines rosées qui illuminent (3.5× plus petites)
-          float arabesque = cloudShadow(vWorldPos.xz * cloudScale * 3.5, time * cloudSpeed * 1.7);
-          
-          vec3 darkColor = vec3(0.03, 0.07, 0.04);          // ombre très sombre
-          vec3 pinkLight = vec3(0.55, 0.28, 0.35);          // arabesques rosées
-          
-          color = mix(color, darkColor, mainShadow * 0.50);
-          color = mix(color, pinkLight, arabesque * 0.07);
+          if (mainShadow > 0.01) {
+            vec3 hsv = rgb2hsv(color);
+            hsv.x = 0.50;                                    // vert turquoise pur
+            hsv.z *= mix(0.60, 0.20, mainShadow);             // 0.2 au centre, 0.6 au bord
+            color = hsv2rgb(hsv);
+          }
 
           gl_FragColor = vec4(color, 1.0);
         }`,
