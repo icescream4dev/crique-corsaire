@@ -828,7 +828,9 @@ export class ThreeRenderer implements IRenderer {
 
         void main() {
           float cloud = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
-          gl_FragColor = vec4(vec3(0.96, 0.97, 1.0), cloud * 0.9);
+          // Guimauve rose poudré — même teinte (0.93) que le reflet, plus saturée que lui
+          vec3 guimauve = vec3(0.98, 0.80, 0.88);
+          gl_FragColor = vec4(guimauve, cloud * 0.9);
         }`,
       transparent: true,
       depthWrite: false,
