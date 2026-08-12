@@ -74,7 +74,7 @@ Les nuages sont un champ de bruit 2D défini sur le plan XZ (world-space), écha
 - **Hauteur des nuages** `h` = **30 m** = **1,5 unité** (choix stylisé, paramètre central).
 
 Les **trois** occurrences du même champ :
-1. **nuage visible** (v10.10) : plan horizontal à `Y = h`, rendu blanc — la référence visuelle qui relie reflet et ombre.
+1. **nuage visible** (v10.10) : plan horizontal à `Y = h`, rendu **guimauve rose poudré** (teinte 0,93, identique au reflet) — la référence visuelle qui relie reflet et ombre.
 2. **reflet** (eau) : projection via réflexion miroir (dépend de la caméra).
 3. **ombre** (terre + eau) : projection via la lumière (dépend du soleil).
 
