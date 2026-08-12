@@ -27,6 +27,46 @@ const TARGET_W = 640;
 const TARGET_H = 360;
 const CAM_DIST = 20;
 
+// Fonctions de bruit GLSL partagées entre le water shader (reflet) et le plan
+// d'ombre nuage. Extraites pour garantir que reflet et ombre utilisent les MÊMES nuages.
+const CLOUD_NOISE_GLSL = /* glsl */ `
+  float hash21(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+  float noise2D(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+      mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
+      f.y
+    );
+  }
+  float fbm(vec2 p) {
+    float v = 0.0, a = 0.5, fr = 1.0;
+    for (int i = 0; i < 4; i++) {
+      v += a * noise2D(p * fr);
+      fr *= 2.0;
+      a *= 0.5;
+    }
+    return v;
+  }
+  // Ombres nuages style Monkey Island 3 : volutes en escargot via double domain warping
+  float cloudShadow(vec2 p, float t) {
+    vec2 q = vec2(
+      fbm(p + vec2(0.0, 0.0) + t * 0.3),
+      fbm(p + vec2(5.2, 1.3) + t * 0.2)
+    );
+    vec2 r = vec2(
+      fbm(p + 3.0 * q + vec2(1.7, 9.2) + t * 0.15),
+      fbm(p + 3.0 * q + vec2(8.3, 2.8) + t * 0.12)
+    );
+    float n = fbm(p + 3.0 * r);
+    return smoothstep(0.62, 0.72, n);
+  }
+`;
+
 export class ThreeRenderer implements IRenderer {
   // Three.js core
   private renderer!: THREE.WebGLRenderer;
@@ -41,6 +81,8 @@ export class ThreeRenderer implements IRenderer {
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
   private waterMesh: THREE.Mesh | null = null;
+  private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus de tout)
+  private cloudTime = 0; // temps partagé eau/ombre pour des nuages synchronisés
   private sceneRT!: THREE.WebGLRenderTarget; // scene pré-rendue pour l'eau
 
   // World / camera state
@@ -68,7 +110,7 @@ export class ThreeRenderer implements IRenderer {
     this.ct = container;
 
     // Renderer WebGL
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.shadowMap.enabled = true;
@@ -344,17 +386,22 @@ export class ThreeRenderer implements IRenderer {
   // --- IRenderer: update ---
 
   update(dt: number): void {
-    // Étape 1 : rendre la scène opaque (sans eau) dans sceneRT
+    // Étape 1 : rendre la scène opaque (sans eau ni ombre nuage) dans sceneRT
     if (this.waterMesh) this.waterMesh.visible = false;
+    if (this.cloudShadowMesh) this.cloudShadowMesh.visible = false;
     this.renderer.setRenderTarget(this.sceneRT);
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
 
-    // Étape 2 : rendre avec l'eau + post-processing
+    // Étape 2 : rendre avec l'eau + ombre nuage + post-processing
+    this.cloudTime += dt * 0.001;
     if (this.waterMesh) {
       this.waterMesh.visible = true;
-      const mat = this.waterMesh.material as THREE.ShaderMaterial;
-      mat.uniforms.time.value += dt * 0.001;
+      (this.waterMesh.material as THREE.ShaderMaterial).uniforms.time.value = this.cloudTime;
+    }
+    if (this.cloudShadowMesh) {
+      this.cloudShadowMesh.visible = true;
+      (this.cloudShadowMesh.material as THREE.ShaderMaterial).uniforms.time.value = this.cloudTime;
     }
     this.composer.render();
   }
@@ -475,6 +522,7 @@ export class ThreeRenderer implements IRenderer {
   renderWorld(island: IslandData): void {
     this.buildTerrain(island.tiles);
     this.buildWater(island.width, island.height);
+    this.buildCloudShadow(island.width, island.height);
   }
 
   private buildWater(w: number, h: number): void {
@@ -569,48 +617,8 @@ export class ThreeRenderer implements IRenderer {
           return minDist;
         }
 
-        // --- Fonctions de bruit pour ombres nuages ---
-        float hash21(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-        }
-
-        float noise2D(vec2 p) {
-          vec2 i = floor(p);
-          vec2 f = fract(p);
-          f = f * f * (3.0 - 2.0 * f); // smoothstep
-          return mix(
-            mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
-            mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
-            f.y
-          );
-        }
-
-        float fbm(vec2 p) {
-          float v = 0.0, a = 0.5, fr = 1.0;
-          for (int i = 0; i < 4; i++) {
-            v += a * noise2D(p * fr);
-            fr *= 2.0;
-            a *= 0.5;
-          }
-          return v;
-        }
-
-        // Ombres nuages style Monkey Island 3 : volutes en escargot via double domain warping
-        float cloudShadow(vec2 p, float t) {
-          // Étape 1 : warping primaire — déplace les features par du bruit
-          vec2 q = vec2(
-            fbm(p + vec2(0.0, 0.0) + t * 0.3),
-            fbm(p + vec2(5.2, 1.3) + t * 0.2)
-          );
-          // Étape 2 : warping croisé — torsion en escargot
-          vec2 r = vec2(
-            fbm(p + 3.0 * q + vec2(1.7, 9.2) + t * 0.15),
-            fbm(p + 3.0 * q + vec2(8.3, 2.8) + t * 0.12)
-          );
-          float n = fbm(p + 3.0 * r);
-          // Seuil pour bords nets cartoon (moins de nuages)
-          return smoothstep(0.62, 0.72, n);
-        }
+        // --- Fonctions de bruit pour ombres nuages (partagées avec le plan d'ombre) ---
+        ${CLOUD_NOISE_GLSL}
 
         // RGB → HSV
         vec3 rgb2hsv(vec3 c) {
@@ -715,6 +723,58 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(this.waterMesh);
   }
 
+  private buildCloudShadow(w: number, h: number): void {
+    if (this.cloudShadowMesh) {
+      this.cloudShadowMesh.geometry.dispose();
+      (this.cloudShadowMesh.material as THREE.Material).dispose();
+      this.scene.remove(this.cloudShadowMesh);
+    }
+
+    const worldW = w * TS;
+    const worldH = h * TS;
+    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        cloudScale: { value: 0.3 },                          // identique au water shader
+        cloudSpeed: { value: 0.3 },
+        cloudOffset: { value: new THREE.Vector2(-3.0, 3.0) }, // ombre décalée (sud-est, cohérent soleil NO)
+        uShadowStrength: { value: 0.40 },                    // assombrissement max au centre
+        time: { value: 0 },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float cloudScale;
+        uniform float cloudSpeed;
+        uniform vec2 cloudOffset;
+        uniform float uShadowStrength;
+        uniform float time;
+        varying vec3 vWorldPos;
+
+        ${CLOUD_NOISE_GLSL}
+
+        void main() {
+          float shadow = cloudShadow((vWorldPos.xz + cloudOffset) * cloudScale, time * cloudSpeed);
+          gl_FragColor = vec4(0.0, 0.0, 0.0, shadow * uShadowStrength);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+    });
+
+    this.cloudShadowMesh = new THREE.Mesh(geo, mat);
+    this.cloudShadowMesh.position.set(worldW / 2, 3.0, worldH / 2); // au-dessus des montagnes (~0.6)
+    this.cloudShadowMesh.renderOrder = 2; // après le terrain (0) et l'eau (1)
+    this.scene.add(this.cloudShadowMesh);
+  }
+
   // --- Bâtiments ---
 
   renderBuilding(tile: Tile): void {
@@ -751,6 +811,8 @@ export class ThreeRenderer implements IRenderer {
       m.parent?.remove(m);
     }
     this.terrainMesh = null;
+    this.waterMesh = null;
+    this.cloudShadowMesh = null;
   }
 
   // --- Raycasting ---
