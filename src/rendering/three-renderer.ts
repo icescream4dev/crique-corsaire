@@ -85,8 +85,9 @@ export class ThreeRenderer implements IRenderer {
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
   private waterMesh: THREE.Mesh | null = null;
-  private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus de tout)
-  private cloudTime = 0; // temps partagé eau/ombre pour des nuages synchronisés
+  private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus du sol)
+  private cloudMesh: THREE.Mesh | null = null;       // nuages visibles (Y = CLOUD_HEIGHT)
+  private cloudTime = 0; // temps partagé eau/ombre/nuage pour des nuages synchronisés
   private sceneRT!: THREE.WebGLRenderTarget; // scene pré-rendue pour l'eau
 
   // World / camera state
@@ -391,14 +392,15 @@ export class ThreeRenderer implements IRenderer {
   // --- IRenderer: update ---
 
   update(dt: number): void {
-    // Étape 1 : rendre la scène opaque (sans eau ni ombre nuage) dans sceneRT
+    // Étape 1 : rendre la scène opaque (sans eau, ombre ni nuage) dans sceneRT
     if (this.waterMesh) this.waterMesh.visible = false;
     if (this.cloudShadowMesh) this.cloudShadowMesh.visible = false;
+    if (this.cloudMesh) this.cloudMesh.visible = false;
     this.renderer.setRenderTarget(this.sceneRT);
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
 
-    // Étape 2 : rendre avec l'eau + ombre nuage + post-processing
+    // Étape 2 : rendre avec l'eau + ombre nuage + nuages + post-processing
     this.cloudTime += dt * 0.001;
     if (this.waterMesh) {
       this.waterMesh.visible = true;
@@ -407,6 +409,10 @@ export class ThreeRenderer implements IRenderer {
     if (this.cloudShadowMesh) {
       this.cloudShadowMesh.visible = true;
       (this.cloudShadowMesh.material as THREE.ShaderMaterial).uniforms.time.value = this.cloudTime;
+    }
+    if (this.cloudMesh) {
+      this.cloudMesh.visible = true;
+      (this.cloudMesh.material as THREE.ShaderMaterial).uniforms.time.value = this.cloudTime;
     }
     this.composer.render();
   }
@@ -528,6 +534,7 @@ export class ThreeRenderer implements IRenderer {
     this.buildTerrain(island.tiles);
     this.buildWater(island.width, island.height);
     this.buildCloudShadow(island.width, island.height);
+    this.buildClouds(island.width, island.height);
   }
 
   private buildWater(w: number, h: number): void {
@@ -781,9 +788,57 @@ export class ThreeRenderer implements IRenderer {
     });
 
     this.cloudShadowMesh = new THREE.Mesh(geo, mat);
-    this.cloudShadowMesh.position.set(worldW / 2, 3.0, worldH / 2); // au-dessus des montagnes (~0.6)
+    this.cloudShadowMesh.position.set(worldW / 2, 0.8, worldH / 2); // au-dessus des montagnes (~0.6), sous le nuage (1.5)
     this.cloudShadowMesh.renderOrder = 2; // après le terrain (0) et l'eau (1)
     this.scene.add(this.cloudShadowMesh);
+  }
+
+  private buildClouds(w: number, h: number): void {
+    if (this.cloudMesh) {
+      this.cloudMesh.geometry.dispose();
+      (this.cloudMesh.material as THREE.Material).dispose();
+      this.scene.remove(this.cloudMesh);
+    }
+
+    const worldW = w * TS;
+    const worldH = h * TS;
+    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        cloudScale: { value: 0.3 },   // identique reflet/ombre
+        cloudSpeed: { value: 0.3 },
+        time: { value: 0 },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float cloudScale;
+        uniform float cloudSpeed;
+        uniform float time;
+        varying vec3 vWorldPos;
+
+        ${CLOUD_NOISE_GLSL}
+
+        void main() {
+          float cloud = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
+          gl_FragColor = vec4(vec3(0.96, 0.97, 1.0), cloud * 0.9);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+    });
+
+    this.cloudMesh = new THREE.Mesh(geo, mat);
+    this.cloudMesh.position.set(worldW / 2, CLOUD_HEIGHT, worldH / 2); // hauteur des nuages (30 m)
+    this.cloudMesh.renderOrder = 3; // au-dessus de l'ombre (2)
+    this.scene.add(this.cloudMesh);
   }
 
   // --- Bâtiments ---
@@ -824,6 +879,7 @@ export class ThreeRenderer implements IRenderer {
     this.terrainMesh = null;
     this.waterMesh = null;
     this.cloudShadowMesh = null;
+    this.cloudMesh = null;
   }
 
   // --- Raycasting ---
