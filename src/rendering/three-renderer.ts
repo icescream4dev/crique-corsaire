@@ -67,6 +67,10 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
   }
 `;
 
+// Géométrie lumière/caméra — voir design/reference-lumiere-ombres-reflets.md
+const CLOUD_HEIGHT = 1.5; // hauteur nuage en unités monde (30 m)
+const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT); // (-1.2, +0.3)
+
 export class ThreeRenderer implements IRenderer {
   // Three.js core
   private renderer!: THREE.WebGLRenderer;
@@ -353,6 +357,7 @@ export class ThreeRenderer implements IRenderer {
       const wm = this.waterMesh.material as THREE.ShaderMaterial;
       wm.uniforms.uNear.value = this.camera.near;
       wm.uniforms.uFar.value = this.camera.far;
+      wm.uniforms.uCameraPos.value.copy(this.camera.position);
     }
 
     // Mettre à jour la shadow camera pour couvrir le frustum visible
@@ -551,6 +556,8 @@ export class ThreeRenderer implements IRenderer {
         cloudSpeed: { value: 0.3 },                        // vitesse défilement
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
+        uCloudHeight: { value: CLOUD_HEIGHT },
+        uCameraPos: { value: this.camera.position.clone() },
       },
       vertexShader: /* glsl */ `
         varying vec3 vWorldPos;
@@ -586,6 +593,8 @@ export class ThreeRenderer implements IRenderer {
         uniform float cloudSpeed;
         uniform float uNear;
         uniform float uFar;
+        uniform float uCloudHeight;
+        uniform vec3 uCameraPos;
         uniform float time;
 
         varying vec3 vWorldPos;
@@ -691,8 +700,9 @@ export class ThreeRenderer implements IRenderer {
 
           // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
           
-          // Ombre nuage : HSV (teinte décorrélée de la luminosité)
-          float mainShadow = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
+          // Reflet : projeter le nuage via réflexion miroir (décalé vers la caméra)
+          vec2 reflXZ = vWorldPos.xz + (uCloudHeight / uCameraPos.y) * (vWorldPos.xz - uCameraPos.xz);
+          float mainShadow = cloudShadow(reflXZ * cloudScale, time * cloudSpeed);
           if (mainShadow > 0.01) {
             vec3 hsv = rgb2hsv(color);
             if (abs(mainShadow - 0.92) < 0.015) {
@@ -739,10 +749,8 @@ export class ThreeRenderer implements IRenderer {
       uniforms: {
         cloudScale: { value: 0.3 },                          // identique au water shader
         cloudSpeed: { value: 0.3 },
-        // Décalage ombre = hauteur nuage × cotan(élévation soleil). Soleil (40,50,-10)
-        // → élévation ~50.5°, direction horizontale (-0.97, +0.24) = ratio 4:1 (X:Z).
-        // Nuage à ~30m → ΔX ≈ -2.4 tuiles, ΔZ ≈ +0.6 tuiles → (-1.2, +0.3) unités monde.
-        cloudOffset: { value: new THREE.Vector2(-1.2, 0.3) },
+        // Décalage ombre (constant, soleil directionnel) — voir reference-lumiere-ombres-reflets.md
+        cloudOffset: { value: SHADOW_OFFSET.clone() },
         uShadowStrength: { value: 0.40 },                    // assombrissement max au centre
         time: { value: 0 },
       },
