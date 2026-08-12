@@ -36,7 +36,10 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
   float noise2D(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
+    // Interpolation quintique (C2) : la cubique classique f^2(3-2f) a une
+    // derivee seconde discontinue aux bords des cellules -> la grille de lattice
+    // (floor(p)) devient visible sous forme de cases dans les nuages.
+    f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     return mix(
       mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
       mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
