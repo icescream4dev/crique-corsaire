@@ -81,7 +81,7 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
       fbm(p + 3.0 * q + vec2(8.3, 2.8) + t * 0.12)
     );
     float n = fbm(p + 3.0 * r);
-    return smoothstep(0.72, 0.80, n);
+    return smoothstep(0.71, 0.79, n);
   }
 `;
 
@@ -599,8 +599,8 @@ export class ThreeRenderer implements IRenderer {
         midColor: { value: new THREE.Color(0x17a2b8) },     // bleu turquoise
         deepColor: { value: new THREE.Color(0x1a5276) },    // bleu profond
         abyssColor: { value: new THREE.Color(0x0d2b4a) },   // bleu nuit
-        cloudScale: { value: 0.02 },                        // échelle (nuages très grands, peu nombreux)
-        cloudSpeed: { value: 0.05 },                        // vitesse défilement
+        cloudScale: { value: 0.005 },                        // échelle (nuages très grands, peu nombreux)
+        cloudSpeed: { value: 0.025 },                        // vitesse défilement
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
         uCloudHeight: { value: CLOUD_HEIGHT },
@@ -794,8 +794,8 @@ export class ThreeRenderer implements IRenderer {
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        cloudScale: { value: 0.02 },                          // identique au water shader
-        cloudSpeed: { value: 0.05 },
+        cloudScale: { value: 0.005 },                          // identique au water shader
+        cloudSpeed: { value: 0.025 },
         // Décalage ombre (constant, soleil directionnel) — voir reference-lumiere-ombres-reflets.md
         cloudOffset: { value: SHADOW_OFFSET.clone() },
         uShadowStrength: { value: 0.40 },                    // assombrissement max au centre
@@ -847,8 +847,8 @@ export class ThreeRenderer implements IRenderer {
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        cloudScale: { value: 0.02 },   // identique reflet/ombre
-        cloudSpeed: { value: 0.05 },
+        cloudScale: { value: 0.005 },   // identique reflet/ombre
+        cloudSpeed: { value: 0.025 },
         time: { value: 0 },
       },
       vertexShader: /* glsl */ `
