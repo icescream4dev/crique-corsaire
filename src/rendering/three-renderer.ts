@@ -599,8 +599,8 @@ export class ThreeRenderer implements IRenderer {
         midColor: { value: new THREE.Color(0x17a2b8) },     // bleu turquoise
         deepColor: { value: new THREE.Color(0x1a5276) },    // bleu profond
         abyssColor: { value: new THREE.Color(0x0d2b4a) },   // bleu nuit
-        cloudScale: { value: 0.05 },                        // échelle (nuages très grands, peu nombreux)
-        cloudSpeed: { value: 0.2 },                        // vitesse défilement
+        cloudScale: { value: 0.02 },                        // échelle (nuages très grands, peu nombreux)
+        cloudSpeed: { value: 0.05 },                        // vitesse défilement
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
         uCloudHeight: { value: CLOUD_HEIGHT },
@@ -794,8 +794,8 @@ export class ThreeRenderer implements IRenderer {
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        cloudScale: { value: 0.05 },                          // identique au water shader
-        cloudSpeed: { value: 0.2 },
+        cloudScale: { value: 0.02 },                          // identique au water shader
+        cloudSpeed: { value: 0.05 },
         // Décalage ombre (constant, soleil directionnel) — voir reference-lumiere-ombres-reflets.md
         cloudOffset: { value: SHADOW_OFFSET.clone() },
         uShadowStrength: { value: 0.40 },                    // assombrissement max au centre
@@ -847,8 +847,8 @@ export class ThreeRenderer implements IRenderer {
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        cloudScale: { value: 0.05 },   // identique reflet/ombre
-        cloudSpeed: { value: 0.2 },
+        cloudScale: { value: 0.02 },   // identique reflet/ombre
+        cloudSpeed: { value: 0.05 },
         time: { value: 0 },
       },
       vertexShader: /* glsl */ `
