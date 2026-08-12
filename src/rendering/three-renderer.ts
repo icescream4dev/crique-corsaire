@@ -71,7 +71,7 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
     return v;
   }
   // Ombres nuages style Monkey Island 3 : volutes en escargot via double domain warping
-  float cloudShadow(vec2 p, float t) {
+  float cloudShadow(vec2 p, float t, float lo) {
     vec2 q = vec2(
       fbm(p + vec2(0.0, 0.0) + t * 0.3),
       fbm(p + vec2(5.2, 1.3) + t * 0.2)
@@ -81,7 +81,7 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
       fbm(p + 3.0 * q + vec2(8.3, 2.8) + t * 0.12)
     );
     float n = fbm(p + 3.0 * r);
-    return smoothstep(0.71, 0.79, n);
+    return smoothstep(lo, lo + 0.08, n);
   }
 `;
 
@@ -749,7 +749,7 @@ export class ThreeRenderer implements IRenderer {
           
           // Reflet : projeter le nuage via réflexion miroir (décalé vers la caméra)
           vec2 reflXZ = vWorldPos.xz + (uCloudHeight / uCameraPos.y) * (vWorldPos.xz - uCameraPos.xz);
-          float mainShadow = cloudShadow(reflXZ * cloudScale, time * cloudSpeed);
+          float mainShadow = cloudShadow(reflXZ * cloudScale, time * cloudSpeed, 0.71);
           if (mainShadow > 0.01) {
             vec3 hsv = rgb2hsv(color);
             if (abs(mainShadow - 0.92) < 0.015) {
@@ -798,7 +798,7 @@ export class ThreeRenderer implements IRenderer {
         cloudSpeed: { value: 0.00625 },
         // Décalage ombre (constant, soleil directionnel) — voir reference-lumiere-ombres-reflets.md
         cloudOffset: { value: SHADOW_OFFSET.clone() },
-        uShadowStrength: { value: 0.40 },                    // assombrissement max au centre
+        uShadowStrength: { value: 0.65 },                    // assombrissement max au centre
         time: { value: 0 },
       },
       vertexShader: /* glsl */ `
@@ -819,7 +819,7 @@ export class ThreeRenderer implements IRenderer {
         ${CLOUD_NOISE_GLSL}
 
         void main() {
-          float shadow = cloudShadow((vWorldPos.xz + cloudOffset) * cloudScale, time * cloudSpeed);
+          float shadow = cloudShadow((vWorldPos.xz + cloudOffset) * cloudScale, time * cloudSpeed, 0.64);
           gl_FragColor = vec4(0.0, 0.0, 0.0, shadow * uShadowStrength);
         }`,
       transparent: true,
@@ -867,7 +867,7 @@ export class ThreeRenderer implements IRenderer {
         ${CLOUD_NOISE_GLSL}
 
         void main() {
-          float cloud = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed);
+          float cloud = cloudShadow(vWorldPos.xz * cloudScale, time * cloudSpeed, 0.71);
           // Guimauve rose poudré — même teinte (0.93) que le reflet, plus saturée que lui
           vec3 guimauve = vec3(0.98, 0.80, 0.88);
           gl_FragColor = vec4(guimauve, cloud * 0.9);
