@@ -752,10 +752,10 @@ export class ThreeRenderer implements IRenderer {
           float mainShadow = cloudShadow(reflXZ * cloudScale, time * cloudSpeed, 0.71);
           if (mainShadow > 0.01) {
             vec3 hsv = rgb2hsv(color);
-            if (abs(mainShadow - 0.92) < 0.015) {
+            if (abs(mainShadow - 0.92) < 0.05) {
               hsv.x = 0.93;                                  // liseré rosé poudré
               hsv.z *= 0.45;                                 // assombrit
-            } else if (abs(mainShadow - 0.50) < 0.015) {
+            } else if (abs(mainShadow - 0.50) < 0.05) {
               hsv.x = 0.42;                                  // liseré vert émeraude
               hsv.z *= 0.55;                                 // assombrit
             } else {
