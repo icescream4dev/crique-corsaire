@@ -464,45 +464,55 @@ export class ThreeRenderer implements IRenderer {
       heightGrid[gy] = [];
       colorGrid[gy] = [];
       for (let gx = 0; gx <= W; gx++) {
-        const samples: Tile[] = [];
-        if (gy < H && gx < W) samples.push(tiles[gy][gx]);
-        if (gy < H && gx > 0) samples.push(tiles[gy][gx - 1]);
-        if (gy > 0 && gx < W) samples.push(tiles[gy - 1][gx]);
-        if (gy > 0 && gx > 0) samples.push(tiles[gy - 1][gx - 1]);
+        // Les 4 tuiles entourant ce sommet (coin de grille)
+        const around: Tile[] = [];
+        if (gy < H && gx < W) around.push(tiles[gy][gx]);         // sud-est
+        if (gy < H && gx > 0) around.push(tiles[gy][gx - 1]);     // sud-ouest
+        if (gy > 0 && gx < W) around.push(tiles[gy - 1][gx]);     // nord-est
+        if (gy > 0 && gx > 0) around.push(tiles[gy - 1][gx - 1]); // nord-ouest
 
-        const color = samples.length > 0 ? C[samples[0].terrain]! : C.deep_water!;
-        const h = samples.length > 0 ? this.getHeight(samples[0]) : 0;
+        // AUTOTILING — couleur du sommet = moyenne des 4 tuiles voisines :
+        //   intérieur d'un type : couleur plate (pas de grille) ;
+        //   frontière entre 2 types : bord net aligné sur la grille (50/50) ;
+        //   coin de 4 types : angle propre (25/25/25/25), diagonale nette (pas d'escalier).
+        const n = around.length;
+        if (n > 0) {
+          let r = 0, g = 0, b = 0;
+          for (const t of around) {
+            const c = C[t.terrain]!;
+            r += c.r; g += c.g; b += c.b;
+          }
+          colorGrid[gy][gx] = [r / n, g / n, b / n];
+        } else {
+          colorGrid[gy][gx] = [0, 0, 0];
+        }
 
+        // Hauteur : base identique à avant (première tuile dispo), lissée plus bas.
+        const h = n > 0 ? this.getHeight(around[0]) : 0;
         heightGrid[gy][gx] = h * HEIGHT_SCALE;
-        colorGrid[gy][gx] = [color.r, color.g, color.b];
       }
     }
 
-    // Lissage de la heightmap ET des vertex colors (box blur 3×3, 3 passes)
-    // pour des pentes progressives ET des transitions de couleur douces (sinon les
-    // couleurs par tuile créent des bords rectilignes qui ressortent dans reflet/ombre/nuage).
+    // Lissage de la heightmap UNIQUEMENT (box blur 3×3, 3 passes) pour des pentes
+    // progressives plage→eau. Les couleurs restent CRISPES (autotiling) : bords de
+    // type nets et alignés sur la grille, sans « bords de cases » dans les zones
+    // uniformes (la moyenne 4-tuiles y est plate).
     for (let pass = 0; pass < 3; pass++) {
       const smoothedH: number[][] = [];
-      const smoothedC: [number, number, number][][] = [];
       for (let gy = 0; gy <= H; gy++) {
         smoothedH[gy] = [];
-        smoothedC[gy] = [];
         for (let gx = 0; gx <= W; gx++) {
           let sum = 0, count = 0;
-          let r = 0, g = 0, b = 0;
           for (let dy = -1; dy <= 1; dy++) {
             for (let dx = -1; dx <= 1; dx++) {
               const sy = gy + dy, sx = gx + dx;
               if (sy >= 0 && sy <= H && sx >= 0 && sx <= W) {
                 sum += heightGrid[sy][sx];
-                const c = colorGrid[sy][sx];
-                r += c[0]; g += c[1]; b += c[2];
                 count++;
               }
             }
           }
           smoothedH[gy][gx] = sum / count;
-          smoothedC[gy][gx] = [r / count, g / count, b / count];
         }
       }
       // Ne lisser que les zones non-falaise (montagne = garder raide)
@@ -512,7 +522,6 @@ export class ThreeRenderer implements IRenderer {
           // Garder les montagnes raides (hauteur > 0.3 → falaise)
           if (orig > 0.3) continue;
           heightGrid[gy][gx] = smoothedH[gy][gx];
-          colorGrid[gy][gx] = smoothedC[gy][gx];
         }
       }
     }
