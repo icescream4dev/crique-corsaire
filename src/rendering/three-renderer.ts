@@ -502,7 +502,7 @@ export class ThreeRenderer implements IRenderer {
         deepColor: { value: new THREE.Color(0x1a5276) },    // bleu profond
         abyssColor: { value: new THREE.Color(0x0d2b4a) },   // bleu nuit
         cloudColor: { value: new THREE.Color(0x3a1f6e) },   // violet ombre nuage
-        cloudScale: { value: 1.2 },                        // échelle (période ~0.8u ≈ 1-2 tuiles)
+        cloudScale: { value: 0.3 },                        // échelle (nuages 2× plus grands)
         cloudSpeed: { value: 0.3 },                        // vitesse défilement
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
@@ -613,7 +613,7 @@ export class ThreeRenderer implements IRenderer {
           );
           float n = fbm(p + 3.0 * r);
           // Seuil pour bords nets cartoon (moins de nuages)
-          return smoothstep(0.57, 0.69, n);
+          return smoothstep(0.62, 0.72, n);
         }
 
         // RGB → HSV
@@ -695,12 +695,16 @@ export class ThreeRenderer implements IRenderer {
           if (mainShadow > 0.01) {
             vec3 hsv = rgb2hsv(color);
             if (abs(mainShadow - 0.92) < 0.015) {
-              hsv.x = 0.90;                                  // rosé
-              hsv.y *= 0.55;                                  // mi-saturé
+              hsv.x = 0.90;                                  // liseré rosé
+              hsv.y *= 0.55;
               hsv.z *= 1.25;
+            } else if (abs(mainShadow - 0.50) < 0.015) {
+              hsv.x = 0.42;                                  // liseré vert émeraude
+              hsv.y *= 0.70;
+              hsv.z *= 1.15;
             } else {
-              hsv.x = 0.50;                                  // vert turquoise
-              hsv.z *= mix(0.60, 0.20, mainShadow);
+              // noir : juste assombrir, teinte d'origine
+              hsv.z *= mix(0.50, 0.10, mainShadow);
             }
             color = hsv2rgb(hsv);
           }
