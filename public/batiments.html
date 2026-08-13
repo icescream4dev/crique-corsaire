@@ -7,14 +7,21 @@
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{background:#0a1628;color:#c8d6e5;font:14px monospace;display:flex;height:100vh}
-  #sidebar{width:260px;background:rgba(255,255,255,0.05);padding:12px;overflow-y:auto;border-right:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:6px}
+  #sidebar{width:280px;background:rgba(255,255,255,0.05);padding:12px;overflow-y:auto;border-right:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;gap:6px}
   #sidebar h2{color:#ffd700;margin-bottom:8px;font-size:16px}
   .bld-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;padding:8px 10px;cursor:pointer;text-align:left;border-radius:4px;font:13px monospace;transition:all 0.15s}
   .bld-btn:hover{background:rgba(255,255,255,0.15)}
   .bld-btn.active{background:rgba(255,215,0,0.2);border-color:#ffd700}
   .bld-btn .level{font-size:11px;color:#aaa;margin-top:3px}
   #view{flex:1;position:relative}
-  #info{position:fixed;bottom:12px;left:272px;background:rgba(0,0,0,0.7);padding:8px 12px;border-radius:4px;font-size:12px;max-width:400px}
+  #toolbar{position:fixed;top:12px;left:292px;display:none;gap:6px;z-index:10}
+  .mode-btn{background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.25);color:#fff;padding:6px 12px;cursor:pointer;border-radius:4px;font:12px monospace}
+  .mode-btn.active{background:#ffd700;color:#0a1628;border-color:#ffd700}
+  #controls{position:fixed;top:48px;left:292px;display:none;gap:12px;align-items:center;background:rgba(0,0,0,0.6);padding:8px 12px;border-radius:4px;z-index:10;font:12px monospace}
+  #controls label{display:flex;align-items:center;gap:6px}
+  #controls input[type=range]{width:140px}
+  #legend{position:fixed;top:88px;left:292px;background:rgba(0,0,0,0.72);padding:8px 10px;border-radius:4px;font-size:11px;display:none;z-index:10;white-space:pre;line-height:1.5}
+  #info{position:fixed;bottom:12px;left:292px;background:rgba(0,0,0,0.7);padding:8px 12px;border-radius:4px;font-size:12px;max-width:460px}
   canvas{display:block}
 </style>
 </head>
@@ -25,12 +32,15 @@
   <div id="building-list">Chargement...</div>
 </div>
 <div id="view"></div>
+<div id="toolbar"></div>
+<div id="controls"></div>
+<div id="legend"></div>
 <div id="info">Clique sur un bâtiment pour voir son sprite</div>
 <script type="importmap">
 { "imports": { "pixi.js": "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.min.mjs" } }
 </script>
 <script type="module">
-import { Application, Sprite, Assets, Graphics, Container, Text, TextStyle } from 'pixi.js';
+import { Application, Sprite, Assets, Graphics, Text, TextStyle, Texture } from 'pixi.js';
 
 const app = new Application();
 await app.init({ resizeTo: document.getElementById('view'), backgroundColor: 0x0a1628, antialias: false, resolution: 1, roundPixels: true });
@@ -38,87 +48,262 @@ document.getElementById('view').appendChild(app.canvas);
 
 const info = document.getElementById('info');
 const list = document.getElementById('building-list');
+const toolbar = document.getElementById('toolbar');
+const controls = document.getElementById('controls');
+const legend = document.getElementById('legend');
 
-// Load building definitions
+// ---- Chargement d'une image brute (même origine) ----
+function loadImage(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('load ' + src));
+    img.src = src;
+  });
+}
+
+function toImageData(img) {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  return ctx.getImageData(0, 0, c.width, c.height);
+}
+
+// ---- Inspecteur ponton ----
+const PX_PER_UNIT = 200;      // 200 px image par unité de profondeur monde
+let pontonMode = 'eau';
+let flat = 162.5;             // ligne d'eau "à plat" (px image) — 162.5 = waterY 0.0575 (submersion 19.5px)
+let useDepth = true;
+let hoverDepth = null;
+let pontonState = null;       // { albedo, depthData, albedoData }
+
+async function showPonton() {
+  const albedo = await loadImage('/ponton-pirate.png');
+  const depth = await loadImage('/ponton-pirate-depth.png');
+  pontonState = { albedo, depthData: toImageData(depth).data, albedoData: toImageData(albedo).data };
+  renderPonton();
+}
+
+// Simule l'eau sur le sprite : teinte les pixels sous la ligne de flottaison.
+// water_line(y) = flat + PX_PER_UNIT * offset(x), offset = (depth/255 - 0.5).
+function simulateWater(state, flat, useDepth) {
+  const { albedo, depthData, albedoData } = state;
+  const c = document.createElement('canvas');
+  c.width = albedo.width; c.height = albedo.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(albedo, 0, 0);
+  const id = ctx.getImageData(0, 0, c.width, c.height);
+  const px = id.data;
+  const w = c.width, h = c.height;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (px[i + 3] < 16) continue; // hors sprite
+      const d = depthData[i];       // 0..255
+      const offset = useDepth ? (d / 255 - 0.5) * 1.0 : 0;
+      const waterLine = flat + PX_PER_UNIT * offset;
+      if (y > waterLine) {
+        // sous l'eau → teinte bleue
+        px[i]     = px[i] * 0.38 + 40;
+        px[i + 1] = px[i + 1] * 0.46 + 92;
+        px[i + 2] = px[i + 2] * 0.58 + 140;
+      }
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+
+// Colormap de la depth map masquée par l'alpha de l'albedo (forme du ponton).
+function depthColormap(state) {
+  const { albedo, depthData, albedoData } = state;
+  const c = document.createElement('canvas');
+  c.width = albedo.width; c.height = albedo.height;
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(c.width, c.height);
+  const px = id.data;
+  let min = 255, max = 0;
+  for (let i = 0; i < depthData.length; i += 4) {
+    const v = depthData[i];
+    if (albedoData[i + 3] < 16) continue;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  for (let i = 0; i < depthData.length; i += 4) {
+    const a = albedoData[i + 3];
+    if (a < 16) { px[i + 3] = 0; continue; }
+    const v = depthData[i];
+    let r, g, b;
+    if (v > 128) {
+      const t = max > 128 ? (v - 128) / (max - 128) : 0;
+      r = 70 + 185 * t; g = 70 - 40 * t; b = 70;
+    } else if (v < 128) {
+      const t = min < 128 ? (128 - v) / (128 - min) : 0;
+      r = 50; g = 120 + 110 * t; b = 120 + 135 * t;
+    } else {
+      r = 180; g = 180; b = 150; // base = beige clair (bien distinct du fond)
+    }
+    px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;
+  }
+  ctx.putImageData(id, 0, 0);
+  return { canvas: c, min, max };
+}
+
+function renderPonton() {
+  app.stage.removeChildren();
+  const state = pontonState;
+  const scale = 3;
+  const W = app.screen.width, H = app.screen.height;
+  const iw = state.albedo.width, ih = state.albedo.height;
+
+  hoverDepth = null;
+  const place = (tex, cx, cy) => {
+    const s = new Sprite(tex);
+    s.anchor.set(0.5); s.x = cx; s.y = cy; s.scale.set(scale);
+    app.stage.addChild(s);
+    return s;
+  };
+
+  const albedoTex = Texture.from(state.albedo);
+  const col = depthColormap(state);
+  const colTex = Texture.from(col.canvas);
+  const cxL = W / 2 - iw * scale / 2 - 16;
+  const cxR = W / 2 + iw * scale / 2 + 16;
+
+  controls.style.display = (pontonMode === 'eau') ? 'flex' : 'none';
+
+  if (pontonMode === 'eau') {
+    const waterCanvas = simulateWater(state, flat, useDepth);
+    const s = place(Texture.from(waterCanvas), W / 2, H / 2);
+    hoverDepth = { ...state.depthData, data: state.depthData, w: iw, h: ih, sprite: s, scale, x: W / 2, y: H / 2 };
+  } else if (pontonMode === 'albedo') {
+    place(albedoTex, W / 2, H / 2);
+  } else if (pontonMode === 'depth') {
+    const s = place(colTex, W / 2, H / 2);
+    hoverDepth = { data: state.depthData, w: iw, h: ih, sprite: s, scale, x: W / 2, y: H / 2 };
+  } else if (pontonMode === 'split') {
+    place(albedoTex, cxL, H / 2);
+    const s = place(colTex, cxR, H / 2);
+    hoverDepth = { data: state.depthData, w: iw, h: ih, sprite: s, scale, x: cxR, y: H / 2 };
+  } else if (pontonMode === 'overlay') {
+    place(albedoTex, W / 2, H / 2);
+    const o = place(colTex, W / 2, H / 2);
+    o.alpha = 0.55;
+    hoverDepth = { data: state.depthData, w: iw, h: ih, sprite: o, scale, x: W / 2, y: H / 2 };
+  }
+
+  legend.textContent =
+    `Profil cylindrique : gris 128 = méridien avant (le plus proche),\n` +
+    `  gris ${col.min} = silhouette (bords, reculés).\n` +
+    `L'eau suit la base elliptique de chaque poteau (submersion\n` +
+    `uniforme) au lieu de monter en ligne droite.\n` +
+    `Survole l'image pour lire la valeur exacte du pixel.`;
+  info.textContent = `Ponton — mode « ${pontonMode} » ${pontonMode === 'eau' ? '· slider = niveau d\'eau, toggle = depth map ON/OFF' : ''}`;
+}
+
+// lecture de la valeur depth sous le curseur
+document.getElementById('view').addEventListener('mousemove', (e) => {
+  if (!hoverDepth) return;
+  const rect = app.canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const { data, w, h, sprite, scale, x, y } = hoverDepth;
+  const ix = Math.round((mx - x) / scale + w / 2);
+  const iy = Math.round((my - y) / scale + h / 2);
+  if (ix < 0 || iy < 0 || ix >= w || iy >= h) { info.textContent = `Ponton — mode « ${pontonMode} »`; return; }
+  const v = data[(iy * w + ix) * 4];
+  info.textContent = `Ponton — pixel (${ix}, ${iy}) → depth = ${v}`;
+});
+
+// ---- Barres de modes + contrôles ----
+const MODES = [['eau', 'Eau (effet)'], ['split', 'Côte à côte'], ['overlay', 'Superposition'], ['albedo', 'Albedo'], ['depth', 'Depth map']];
+function buildToolbar() {
+  toolbar.innerHTML = '';
+  for (const [key, label] of MODES) {
+    const b = document.createElement('button');
+    b.className = 'mode-btn' + (key === pontonMode ? ' active' : '');
+    b.textContent = label;
+    b.onclick = () => { pontonMode = key; buildToolbar(); renderPonton(); };
+    toolbar.appendChild(b);
+  }
+}
+function buildControls() {
+  controls.innerHTML = '';
+  const lab = document.createElement('label');
+  lab.innerHTML = `Niveau d'eau <b id="flat-val">${flat.toFixed(1)}</b>px`;
+  const sl = document.createElement('input');
+  sl.type = 'range'; sl.min = 100; sl.max = 180; sl.step = 0.5; sl.value = flat;
+  sl.oninput = () => { flat = parseFloat(sl.value); document.getElementById('flat-val').textContent = flat.toFixed(1); renderPonton(); };
+  lab.appendChild(sl);
+  controls.appendChild(lab);
+  const cb = document.createElement('label');
+  cb.innerHTML = `<input type="checkbox" id="depth-toggle" ${useDepth ? 'checked' : ''}> depth map`;
+  cb.querySelector('input').onchange = (e) => { useDepth = e.target.checked; renderPonton(); };
+  controls.appendChild(cb);
+}
+
+// ---- Liste des bâtiments ----
 let buildings = [];
 try {
   const resp = await fetch('/data/buildings/port.json');
   buildings = [await resp.json()];
-} catch(e) {
-  list.textContent = 'Erreur: ' + e.message;
-}
+} catch(e) { list.textContent = 'Erreur: ' + e.message; }
 
-// Ajouter les tilesets d'eau à la liste
 buildings.push({ id:'seabed_v4', name:'Fond marin v4', emoji:'🏖️', description:'Texture 200×200 opaque', levels:[{displayName:'Détails à l échelle'}], spritePath:'/sprites/seabed_v4.png' });
 buildings.push({ id:'water', name:'Eau Caraïbe', emoji:'🌊', description:'Overlay 200×200 semi-transparent', levels:[{displayName:'Eau profonde'}], spritePath:'/sprites/water.png' });
 buildings.push({ id:'foam', name:'Écume', emoji:'🫧', description:'Bande écume 160×160', levels:[{displayName:'Écume de rivage'}], spritePath:'/sprites/foam.png' });
+buildings.push({ id:'ponton-albedo', name:'Ponton pirate (albedo)', emoji:'🪵', kind:'ponton', levels:[{displayName:'Sprite 200×200'}], spritePath:'/ponton-pirate.png' });
+buildings.push({ id:'ponton-depth', name:'Ponton — depth map', emoji:'🕳️', kind:'ponton', levels:[{displayName:'Pixel Depth Offset'}], spritePath:'/ponton-pirate-depth.png' });
 
-// Sprite cache
 const texCache = new Map();
-
-// Render building list
 list.innerHTML = '';
 for (const bld of buildings) {
   const btn = document.createElement('button');
   btn.className = 'bld-btn';
-  btn.innerHTML = `${bld.emoji} ${bld.name}<br><span class="level">${bld.levels[0]?.displayName || ''}</span>`;
+  btn.innerHTML = `${bld.emoji} ${bld.name}<br><span class="level">${bld.levels?.[0]?.displayName || ''}</span>`;
   btn.onclick = async () => {
-    // Highlight
     list.querySelectorAll('.bld-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    
-    // Clear previous
+
+    if (bld.kind === 'ponton') {
+      buildToolbar();
+      buildControls();
+      toolbar.style.display = 'flex';
+      legend.style.display = 'block';
+      await showPonton();
+      return;
+    }
+
+    toolbar.style.display = 'none';
+    controls.style.display = 'none';
+    legend.style.display = 'none';
+    hoverDepth = null;
     app.stage.removeChildren();
     info.textContent = `Chargement de ${bld.name}...`;
-    
-    // Determine sprite path
+
     const spritePath = bld.spritePath || `/sprites/${bld.id}.png`;
-    const fallbackPath = `/ponton-pirate.png`;
-    
     let tex = texCache.get(bld.id);
     if (!tex) {
-      try {
-        tex = await Assets.load(spritePath);
-        texCache.set(bld.id, tex);
-      } catch {
-        try {
-          tex = await Assets.load(fallbackPath);
-          texCache.set(bld.id, tex);
-        } catch {
-          info.textContent = `❌ Impossible de charger le sprite pour ${bld.name}`;
-          return;
-        }
+      try { tex = await Assets.load(spritePath); texCache.set(bld.id, tex); }
+      catch {
+        try { tex = await Assets.load('/ponton-pirate.png'); texCache.set(bld.id, tex); }
+        catch { info.textContent = `❌ Impossible de charger le sprite pour ${bld.name}`; return; }
       }
     }
-    
-    // Background grid
+
     const grid = new Graphics();
-    for (let x = 0; x < app.screen.width; x += 32) {
-      for (let y = 0; y < app.screen.height; y += 32) {
-        grid.rect(x, y, 32, 32);
-        grid.stroke({ width: 0.5, color: 0xffffff, alpha: 0.05 });
-      }
-    }
+    for (let x = 0; x < app.screen.width; x += 32)
+      for (let y = 0; y < app.screen.height; y += 32) { grid.rect(x, y, 32, 32); grid.stroke({ width: 0.5, color: 0xffffff, alpha: 0.05 }); }
     app.stage.addChild(grid);
-    
-    // Sprite
+
     const s = new Sprite(tex);
-    s.anchor.set(0.5, 0.5);
-    s.x = app.screen.width / 2;
-    s.y = app.screen.height / 2;
-    s.scale.set(3); // zoom pour bien voir
+    s.anchor.set(0.5, 0.5); s.x = app.screen.width / 2; s.y = app.screen.height / 2; s.scale.set(3);
     app.stage.addChild(s);
-    
-    // Label
-    const label = new Text({
-      text: `${bld.emoji} ${bld.name}\n${bld.levels[0]?.displayName || 'Niveau 1'}`,
-      style: new TextStyle({ fontSize: 14, fill: '#ffd700', align: 'center', fontFamily: 'monospace' })
-    });
-    label.anchor.set(0.5, 0);
-    label.x = app.screen.width / 2;
-    label.y = app.screen.height / 2 + 100;
+
+    const label = new Text({ text: `${bld.emoji} ${bld.name}\n${bld.levels?.[0]?.displayName || 'Niveau 1'}`, style: new TextStyle({ fontSize: 14, fill: '#ffd700', align: 'center', fontFamily: 'monospace' }) });
+    label.anchor.set(0.5, 0); label.x = app.screen.width / 2; label.y = app.screen.height / 2 + 100;
     app.stage.addChild(label);
-    
+
     info.textContent = `${bld.name} — ${bld.description}`;
   };
   list.appendChild(btn);

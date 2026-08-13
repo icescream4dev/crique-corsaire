@@ -117,6 +117,8 @@ export class ThreeRenderer implements IRenderer {
   private portTexture: THREE.Texture | null = null; // sprite du ponton (chargé async)
   private portSpriteW = 0; // taille monde du contenu rogné du sprite
   private portSpriteH = 0;
+  private depthTexture: THREE.Texture | null = null; // depth map (Pixel Depth Offset)
+  private contentBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
 
   // World / camera state
   private ww = 0;
@@ -252,8 +254,18 @@ export class ThreeRenderer implements IRenderer {
       tex.magFilter = THREE.NearestFilter;
       tex.minFilter = THREE.NearestFilter;
       this.portTexture = this.cropTransparent(tex);
+
+      // Depth map (Pixel Depth Offset) : même bbox que l'albedo, données brutes (pas sRGB)
+      const dtex = await this.textureLoader.loadAsync('/ponton-pirate-depth.png');
+      dtex.colorSpace = THREE.NoColorSpace;
+      dtex.magFilter = THREE.NearestFilter;
+      dtex.minFilter = THREE.NearestFilter;
+      if (this.contentBBox) {
+        this.depthTexture = this.cropToBbox(dtex.image as HTMLImageElement, this.contentBBox, THREE.NoColorSpace);
+      }
     } catch {
       this.portTexture = null;
+      this.depthTexture = null;
     }
 
     this.onAssetsLoaded?.();
@@ -653,7 +665,7 @@ export class ThreeRenderer implements IRenderer {
           h += wave(vec2(-0.4, 0.9), 0.03, 3.5, 0.5, 0.5, worldPos.xz, time);
           h += wave(vec2(0.8, -0.2), 0.02, 5.0, 1.0, 0.4, worldPos.xz, time);
           h += wave(vec2(-0.6, -0.7), 0.015, 7.0, 0.7, 0.6, worldPos.xz, time);
-          worldPos.y = waterLevel + h;
+          worldPos.y = waterLevel + h * 0.5; // amplitude des vagues réduite de moitié (échelle sprite)
           vWorldPos = worldPos.xyz;
           gl_Position = projectionMatrix * viewMatrix * worldPos;
           vScreenPos = gl_Position;
@@ -754,11 +766,16 @@ export class ThreeRenderer implements IRenderer {
           float foam = 1.0 - smoothstep(0.02, 0.06, waterDepth);
           color = mix(color, vec3(0.96, 0.97, 1.0), foam * 0.25);
 
-          // Clapotis au large : Voronoï étiré iso, stop-motion, open sea only
+          // Clapotis au large : Voronoï, stop-motion, open sea only
           float retroTime = floor(time * 8.0) / 8.0; // 8 FPS
 
-          // UV étirés en isométrique, ×15 plus petit
-          vec2 waveUV = vec2(vWorldPos.x * 9.0, vWorldPos.z * 45.0);
+          // Projection isométrique 2:1 (world-space) : les vagues suivent les
+          // diagonales du sol au lieu de flotter face caméra. (X-Z, (X+Z)/2)
+          // est la transform dimétrique standard (diagonales à 26,565°).
+          // L'étirement directionnel (*9, *45) conserve l'aspect "stries fines"
+          // validé en v10.3 -> hybride iso + stries.
+          vec2 iso = vec2(vWorldPos.x - vWorldPos.z, (vWorldPos.x + vWorldPos.z) * 0.5);
+          vec2 waveUV = iso * vec2(9.0, 45.0);
 
           // Double couche défilante à vitesses différentes
           float n1 = voronoi(waveUV + vec2(retroTime * 0.005, retroTime * 0.003));
@@ -967,8 +984,25 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(mesh);
   }
 
+  // Croppe une région (px image d'origine) en CanvasTexture NearestFilter.
+  private cropToBbox(img: HTMLImageElement, bbox: { minX: number; minY: number; maxX: number; maxY: number }, colorSpace: string = THREE.SRGBColorSpace): THREE.Texture {
+    const cw = bbox.maxX - bbox.minX + 1;
+    const ch = bbox.maxY - bbox.minY + 1;
+    const out = document.createElement('canvas');
+    out.width = cw;
+    out.height = ch;
+    out.getContext('2d')!.drawImage(img, bbox.minX, bbox.minY, cw, ch, 0, 0, cw, ch);
+    const cropped = new THREE.CanvasTexture(out);
+    cropped.colorSpace = colorSpace;
+    cropped.magFilter = THREE.NearestFilter;
+    cropped.minFilter = THREE.NearestFilter;
+    cropped.needsUpdate = true;
+    return cropped;
+  }
+
   // Rogne les marges transparentes d'une texture de sprite, pour que la base du
   // CONTENU (pas du canvas) puisse être posée exactement au niveau de l'eau.
+  // Stocke aussi le bbox pour découper la depth map au même endroit.
   private cropTransparent(tex: THREE.Texture): THREE.Texture {
     const img = tex.image as HTMLImageElement;
     const iw = img.naturalWidth || img.width;
@@ -991,22 +1025,15 @@ export class ThreeRenderer implements IRenderer {
       }
     }
     if (maxX < minX || maxY < minY) return tex; // aucune zone opaque → inchangé
+    const bbox = { minX, minY, maxX, maxY };
+    this.contentBBox = bbox;
     const cw = maxX - minX + 1;
     const ch = maxY - minY + 1;
-    const out = document.createElement('canvas');
-    out.width = cw;
-    out.height = ch;
-    out.getContext('2d')!.drawImage(img, minX, minY, cw, ch, 0, 0, cw, ch);
-    const cropped = new THREE.CanvasTexture(out);
-    cropped.colorSpace = THREE.SRGBColorSpace;
-    cropped.magFilter = THREE.NearestFilter;
-    cropped.minFilter = THREE.NearestFilter;
-    cropped.needsUpdate = true;
     // Échelle monde : l'image d'origine (iw px) représente 1 tuile = TS unités
     const scale = TS / iw;
     this.portSpriteW = cw * scale;
     this.portSpriteH = ch * scale;
-    return cropped;
+    return this.cropToBbox(img, bbox);
   }
 
   // --- Sprite ponton (port) : carte verticale immergée + ombre de contact ---
@@ -1015,7 +1042,7 @@ export class ThreeRenderer implements IRenderer {
     const tex = this.portTexture!;
     const w = this.portSpriteW || TS; // largeur monde du contenu rogné
     const h = this.portSpriteH || TS; // hauteur monde du contenu rogné
-    const waterY = 0.02; // niveau de l'eau (légèrement au-dessus de Y=0)
+    const waterY = 0.0575; // niveau de l'eau : flottaison à 19,5px du bas (0.045 + 5px)
 
     // Perspective fixe : la caméra a un yaw constant (π/4, voir updateCamera).
     // Tous les sprites partagent donc la MÊME orientation — pas de billboard par position
@@ -1033,12 +1060,43 @@ export class ThreeRenderer implements IRenderer {
     shadow.renderOrder = 2;
     this.scene.add(shadow);
 
-    // 2. Sprite : carte verticale, base IMMERGÉE (les piliers descendent sous l'eau).
-    //    Rendu dans sceneRT (passe 1) → la partie immergée est réfractée + absorbée par
-    //    le water shader (Beer-Lambert), et l'écume apparaît là où les piliers traversent l'eau.
+    // 2. Sprite : carte verticale, base IMMERGÉE. La depth map (gris) décale chaque pixel
+    //    dans le depth buffer (Pixel Depth Offset) → l'eau le recouvre en suivant la
+    //    perspective (pilotis proches/loin à des profondeurs différentes).
     const geo = new THREE.PlaneGeometry(w, h);
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide,
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: tex },
+        uDepthMap: { value: this.depthTexture },
+        uDepthRange: { value: 1.0 }, // amplitude monde du décalage (offset = (d-0.5)*range)
+        uNear: { value: this.camera.near },
+        uFar: { value: this.camera.far },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform sampler2D uMap;
+        uniform sampler2D uDepthMap;
+        uniform float uDepthRange;
+        uniform float uNear;
+        uniform float uFar;
+        void main() {
+          vec4 tex = texture2D(uMap, vUv);
+          if (tex.a < 0.5) discard;
+          float d = texture2D(uDepthMap, vUv).r; // 0..1 (0.5 = base)
+          // d > 0.5 → plus proche (gl_FragDepth plus petit) ; d < 0.5 → plus loin
+          float offset = (d - 0.5) * uDepthRange;
+          gl_FragDepth = gl_FragCoord.z - offset / (uFar - uNear);
+          gl_FragColor = tex;
+        }`,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: true,
     });
     const sprite = new THREE.Mesh(geo, mat);
     sprite.rotation.y = yaw;
