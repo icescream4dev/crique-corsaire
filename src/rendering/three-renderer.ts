@@ -123,6 +123,7 @@ export class ThreeRenderer implements IRenderer {
   private wh = 0;
   private camTarget = new THREE.Vector3();
   private camZoom = 1;
+  private baseZoom = 1; // zoom de cadrage (centerOnWorld) — borne haute = baseZoom × 2
   private ct!: HTMLElement;
 
   // Drag state
@@ -269,7 +270,7 @@ export class ThreeRenderer implements IRenderer {
     c.addEventListener('wheel', (e: WheelEvent) => {
       e.preventDefault();
       this.camZoom *= e.deltaY > 0 ? 1.12 : 0.89;
-      this.camZoom = Math.max(0.15, Math.min(8, this.camZoom));
+      this.camZoom = Math.max(0.15, Math.min(this.baseZoom * 2, this.camZoom));
       this.updateCamera();
     }, { passive: false });
 
@@ -348,7 +349,7 @@ export class ThreeRenderer implements IRenderer {
           const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
           const before = this.screenToGround(mx, my);
 
-          const newZoom = Math.max(0.15, Math.min(8, this.pinchZoom * (d / this.pinchDist)));
+          const newZoom = Math.max(0.15, Math.min(this.baseZoom * 2, this.pinchZoom * (d / this.pinchDist)));
           this.camZoom = newZoom;
           this.updateCamera();
 
@@ -427,6 +428,7 @@ export class ThreeRenderer implements IRenderer {
     this.camTarget.set(w * TS / 2, 0, h * TS / 2);
     const worldH = h * TS;
     this.camZoom = 20 / (worldH * 1.3);
+    this.baseZoom = this.camZoom;
     this.updateCamera();
   }
 
