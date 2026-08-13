@@ -2,7 +2,7 @@
 
 > Document de référence pour la cohérence géométrique du rendu Crique Corsaire.
 > Toute modification des nuages, du soleil ou de la caméra doit passer par ici.
-> Version : v10.9.2 — dernière mise à jour : 2026-08-12.
+> Version : v11.0 — dernière mise à jour : 2026-08-13 (passage pitch 40° → 30°, dimétrique 2:1).
 
 ---
 
@@ -23,24 +23,26 @@
 
 ## 2. Caméra
 
-Caméra **orthographique** isométrique (`THREE.OrthographicCamera`).
+Caméra **orthographique** isométrique **dimétrique 2:1** (`THREE.OrthographicCamera`).
 
 | Paramètre | Valeur | Code |
 |---|---|---|
-| pitch | **40,0°** (`Math.PI / 4.5`) | `updateCamera()` |
+| pitch | **30,0°** (`Math.PI / 6`) | `updateCamera()` |
 | yaw | **45,0°** (`Math.PI / 4`) | `updateCamera()` |
 | distance | **20 unités** = 400 m (`CAM_DIST`) | `updateCamera()` |
 | zoom | molette / pinch (`camZoom`) | frustum seul, pas la position |
+
+> **Dimétrique 2:1** : pitch 30° + yaw 45° → le losange du sol a un ratio largeur:hauteur de **2:1** (diagonales à **26,565°**). Standard pixel-art isométrique (AOE II / Starcraft), compatible SpriteCook. `ratio = 1/sin(pitch)`.
 
 Position de la caméra (relative à `camTarget`) :
 
 ```
 offset = CAM_DIST × (cos(pitch)·cos(yaw), sin(pitch), cos(pitch)·sin(yaw))
-       = (+10,83 ; +12,86 ; +10,83) unités
+       = (+12,25 ; +10,00 ; +12,25) unités
 ```
 
-- **Hauteur caméra** `cy` = 12,856 unités = **257 m** (constante, `camTarget.y` reste à 0).
-- **Distance horizontale** = 15,32 unités = 306 m.
+- **Hauteur caméra** `cy` = 10 unités = **200 m** (constante, `camTarget.y` reste à 0).
+- **Distance horizontale** = 17,32 unités = 346 m.
 - **Direction de vue** = `-offset` → la caméra regarde vers **(-X, -Z)** (le nord-est).
 
 > Le zoom ne change que le frustum (`left/right/top/bottom`), jamais la position de la caméra. Donc `cy` et la direction de vue sont invariants en pan/zoom.
@@ -117,18 +119,18 @@ En inversant (pour un pixel d'eau à `worldXZ`, quel nuage s'y reflète ?) :
 ```
 cloudXZ = worldXZ + (h / cy) · (worldXZ - camXZ)
 
-avec cy = hauteur caméra (12,856), camXZ = position caméra au sol.
+avec cy = hauteur caméra (10), camXZ = position caméra au sol.
 ```
 
-`h / cy = 1,5 / 12,856 = 0,1167`.
+`h / cy = 1,5 / 10 = 0,15`.
 
-Interprétation : le reflet d'un nuage apparaît **décalé vers la caméra** d'une fraction `h/(h+cy) = 0,1045` de la distance horizontale nuage→caméra.
+Interprétation : le reflet d'un nuage apparaît **décalé vers la caméra** d'une fraction `h/(h+cy) = 0,1304` de la distance horizontale nuage→caméra.
 
 | Distance nuage→caméra D | Décalage du reflet vers la caméra |
 |---|---|
-| 100 m | ≈ 10,4 m ≈ 1 tuile |
-| 200 m | ≈ 21 m ≈ 2 tuiles |
-| 400 m | ≈ 42 m ≈ 4 tuiles |
+| 100 m | ≈ 13,0 m ≈ 1,3 tuile |
+| 200 m | ≈ 26,1 m ≈ 2,6 tuiles |
+| 400 m | ≈ 52,2 m ≈ 5,2 tuiles |
 
 Sous la caméra (D=0), pas de décalage ; le décalage croît avec D.
 
@@ -168,4 +170,4 @@ const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT);
 Uniforms eau : `uCloudHeight = CLOUD_HEIGHT`, `uCameraPos = camera.position` (mis à jour dans `updateCamera()`).
 Uniforms ombre : `cloudOffset = SHADOW_OFFSET`.
 
-Valeurs dérivées (pour référence) : élévation soleil 50,5°, direction horizontale `(-0,970 ; +0,243)`, `h/cy = 0,1167`.
+Valeurs dérivées (pour référence) : élévation soleil 50,5°, direction horizontale `(-0,970 ; +0,243)`, `h/cy = 0,15`.

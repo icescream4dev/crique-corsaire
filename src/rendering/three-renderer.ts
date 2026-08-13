@@ -91,6 +91,9 @@ const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT);
 // L'eau, l'ombre et les nuages sont étendus au-delà de la carte (l'océan continue),
 // sinon leur bord rectiligne est visible quand on panne/dézoome vers le bord du monde.
 const WORLD_EXTEND = 4;
+// Fraction de la hauteur du sprite immergée sous l'eau (le bas des piliers). La partie
+// immergée est réfractée + absorbée par le water shader (le sprite est déjà dans sceneRT).
+const PORT_IMMERSION = 0.25;
 
 export class ThreeRenderer implements IRenderer {
   // Three.js core
@@ -110,6 +113,10 @@ export class ThreeRenderer implements IRenderer {
   private cloudMesh: THREE.Mesh | null = null;       // nuages visibles (Y = CLOUD_HEIGHT)
   private cloudTime = 0; // temps partagé eau/ombre/nuage pour des nuages synchronisés
   private sceneRT!: THREE.WebGLRenderTarget; // scene pré-rendue pour l'eau
+  private textureLoader = new THREE.TextureLoader();
+  private portTexture: THREE.Texture | null = null; // sprite du ponton (chargé async)
+  private portSpriteW = 0; // taille monde du contenu rogné du sprite
+  private portSpriteH = 0;
 
   // World / camera state
   private ww = 0;
@@ -237,6 +244,18 @@ export class ThreeRenderer implements IRenderer {
     this.blitScene.add(this.blitQuad);
 
     this.setupEvents();
+
+    // Chargement du sprite du ponton (promesse non bloquante ; fallback cube si absent)
+    try {
+      const tex = await this.textureLoader.loadAsync('/ponton-pirate.png');
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      this.portTexture = this.cropTransparent(tex);
+    } catch {
+      this.portTexture = null;
+    }
+
     this.onAssetsLoaded?.();
   }
 
@@ -364,8 +383,9 @@ export class ThreeRenderer implements IRenderer {
     this.camera.bottom = -halfH;
     this.camera.updateProjectionMatrix();
 
-    // Position iso : 45° yaw, 40° pitch, distance fixe
-    const pitch = Math.PI / 4.5;
+    // Position iso : 45° yaw, 30° pitch — dimétrique 2:1 (diagonales du sol à 26,565°),
+    // standard pixel-art isométrique (AOE II / Starcraft), compatible SpriteCook.
+    const pitch = Math.PI / 6;
     const yaw = Math.PI / 4;
     this.camera.position.set(
       this.camTarget.x + CAM_DIST * Math.cos(pitch) * Math.cos(yaw),
@@ -897,10 +917,43 @@ export class ThreeRenderer implements IRenderer {
   renderBuilding(tile: Tile): void {
     if (!tile.buildings.length) return;
     const b = tile.buildings[0];
-    const bx = b.gridX * TS;
-    const bz = b.gridY * TS;
-    const by = this.getHeight(tile) * HEIGHT_SCALE + 0.02;
 
+    // Centré sur la tuile (pas le coin) — corrige le décalage d'une demi-tuile
+    const cx = (b.gridX + 0.5) * TS;
+    const cz = (b.gridY + 0.5) * TS;
+    const groundY = this.getHeight(tile) * HEIGHT_SCALE;
+
+    // Sur l'eau (pilotis) : pas de socle — les pilotis sortent directement de l'eau,
+    // le bâtiment flotte au niveau de la surface.
+    const isStilts = b.anchor === 'stilts';
+    const baseY = isStilts ? 0.02 : groundY + 0.03;
+
+    // Port sur l'eau : sprite ponton en surcouche quand la texture est prête
+    if (isStilts && b.defId === 'port' && this.portTexture) {
+      this.renderPortSprite(cx, cz);
+      return;
+    }
+
+    if (!isStilts) {
+      // --- Skirt : monticule de terrain qui remonte contre la base du bâtiment ---
+      // Couleur = terrain sous-jacent assombri → intégration sur n'importe quel terrain
+      // (sable → monticule de sable, palm → herbe/terre, mountain → roche).
+      const terrainColor = C[tile.terrain] ?? C.palm!;
+      const skirtColor = new THREE.Color(terrainColor).multiplyScalar(0.78);
+      const skirtGeo = new THREE.CylinderGeometry(TS * 0.22, TS * 0.30, TS * 0.09, 8);
+      const skirtMat = new THREE.MeshStandardMaterial({
+        color: skirtColor,
+        roughness: 0.95,
+        flatShading: true,
+      });
+      const skirt = new THREE.Mesh(skirtGeo, skirtMat);
+      // bas du monticule au ras du sol, sommet remontant vers la base du bâtiment
+      skirt.position.set(cx, groundY + TS * 0.045, cz);
+      skirt.receiveShadow = true;
+      this.scene.add(skirt);
+    }
+
+    // --- Bâtiment : boîte posée sur le sol (base = baseY) ---
     const geo = new THREE.BoxGeometry(TS * 0.7, TS * 0.35, TS * 0.7);
     const mat = new THREE.MeshStandardMaterial({
       color: b.operational ? 0xd4a017 : 0x555555,
@@ -908,10 +961,91 @@ export class ThreeRenderer implements IRenderer {
       flatShading: true,
     });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(bx, by + TS * 0.18, bz);
+    mesh.position.set(cx, baseY + TS * 0.175, cz); // bas = baseY
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);
+  }
+
+  // Rogne les marges transparentes d'une texture de sprite, pour que la base du
+  // CONTENU (pas du canvas) puisse être posée exactement au niveau de l'eau.
+  private cropTransparent(tex: THREE.Texture): THREE.Texture {
+    const img = tex.image as HTMLImageElement;
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    const c = document.createElement('canvas');
+    c.width = iw;
+    c.height = ih;
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, iw, ih).data;
+    let minX = iw, minY = ih, maxX = -1, maxY = -1;
+    for (let y = 0; y < ih; y++) {
+      for (let x = 0; x < iw; x++) {
+        if (data[(y * iw + x) * 4 + 3] > 16) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < minX || maxY < minY) return tex; // aucune zone opaque → inchangé
+    const cw = maxX - minX + 1;
+    const ch = maxY - minY + 1;
+    const out = document.createElement('canvas');
+    out.width = cw;
+    out.height = ch;
+    out.getContext('2d')!.drawImage(img, minX, minY, cw, ch, 0, 0, cw, ch);
+    const cropped = new THREE.CanvasTexture(out);
+    cropped.colorSpace = THREE.SRGBColorSpace;
+    cropped.magFilter = THREE.NearestFilter;
+    cropped.minFilter = THREE.NearestFilter;
+    cropped.needsUpdate = true;
+    // Échelle monde : l'image d'origine (iw px) représente 1 tuile = TS unités
+    const scale = TS / iw;
+    this.portSpriteW = cw * scale;
+    this.portSpriteH = ch * scale;
+    return cropped;
+  }
+
+  // --- Sprite ponton (port) : carte verticale immergée + ombre de contact ---
+
+  private renderPortSprite(cx: number, cz: number): void {
+    const tex = this.portTexture!;
+    const w = this.portSpriteW || TS; // largeur monde du contenu rogné
+    const h = this.portSpriteH || TS; // hauteur monde du contenu rogné
+    const waterY = 0.02; // niveau de l'eau (légèrement au-dessus de Y=0)
+
+    // Perspective fixe : la caméra a un yaw constant (π/4, voir updateCamera).
+    // Tous les sprites partagent donc la MÊME orientation — pas de billboard par position
+    // (en projection ortho, la direction de vue est constante, parallèle).
+    const yaw = Math.PI / 4;
+
+    // 1. Ombre portée : ellipse sombre sur la surface (ancre le sprite)
+    const shadowGeo = new THREE.CircleGeometry(TS * 0.38, 20);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false,
+    });
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(cx, waterY, cz);
+    shadow.renderOrder = 2;
+    this.scene.add(shadow);
+
+    // 2. Sprite : carte verticale, base IMMERGÉE (les piliers descendent sous l'eau).
+    //    Rendu dans sceneRT (passe 1) → la partie immergée est réfractée + absorbée par
+    //    le water shader (Beer-Lambert), et l'écume apparaît là où les piliers traversent l'eau.
+    const geo = new THREE.PlaneGeometry(w, h);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide,
+    });
+    const sprite = new THREE.Mesh(geo, mat);
+    sprite.rotation.y = yaw;
+    // base = waterY - h*PORT_IMMERSION  →  centre = waterY + h*(0.5 - PORT_IMMERSION)
+    sprite.position.set(cx, waterY + h * (0.5 - PORT_IMMERSION), cz);
+    sprite.renderOrder = 2;
+    this.scene.add(sprite);
   }
 
   // --- Clear ---
