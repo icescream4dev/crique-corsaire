@@ -60,23 +60,30 @@ for x in poteau_cols:
     if len(ys):
         depth[ys, x] = g
 
-# --- Corrections ciblées (retour Julien 2026-08-13) ---
-# 1. Silhouettes manquantes : le THRESH=150 exclut les colonnes de silhouette
-#    (y_bottom légèrement < 150, l'ellipse remonte sur les bords). Ajouter
-#    1px à gauche du poteau gauche (x=56) et 1px à droite du poteau droit
-#    (x=175) — même formule cylindrique, y_bottom lu dans l'alpha.
-for x in (56, 175):
+# --- Corrections ciblées (retour Julien 2026-08-13, 3e passe) ---
+# 1. Silhouette gauche : x=55 et x=56 sont le bord du cylindre gauche (l'ellipse
+#    remonte à yb 142/148). La formule surestime la profondeur (76/84) → l'eau
+#    remonte trop haut. On leur donne la profondeur du bord voisin x=57 (gradient
+#    doux) : ça couvre les pixels manquants sans sur-profonder.
+g57 = int(depth[np.where(opaque[:, 57])[0][0], 57])
+for x in (55, 56):
     ys = np.where(opaque[:, x])[0]
     if len(ys):
-        prof = (y_bottom[x] - y_ref) / 200.0
-        depth[ys, x] = int(round((0.5 + prof) * 255))
+        depth[ys, x] = g57
 
-# 2. Poutre sous le ponton (structure horizontale, plan avant — « tout en
-#    avant ») : les 2 pixels x=118-119 à y=157 sont séparés du poteau central
-#    par un gap (x=117) et ne doivent PAS recevoir la profondeur cylindrique
-#    du poteau. Ils repassent à 128 (plan avant, comme le deck).
-depth[157, 118] = 128
-depth[157, 119] = 128
+# 2. Silhouette droite : x=175 = bord du cylindre, profondeur = x=174.
+ys175 = np.where(opaque[:, 175])[0]
+if len(ys175):
+    depth[ys175, 175] = int(depth[np.where(opaque[:, 174])[0][0], 174])
+
+# 3. Poutre (traverse avant, premier plan, jamais immergée) : toute la zone qui
+#    déborde du poteau central → 128, comme la plateforme. Le poteau central
+#    s'arrête à x=116 (descend à 181) ; au-delà à droite (x=117..122, yb 155-157)
+#    et à gauche (x=105), c'est la traverse avant (le yb visible est la poutre,
+#    pas l'ellipse du poteau).
+for x in [105] + list(range(117, 123)):
+    ys = np.where(opaque[:, x])[0]
+    depth[ys, x] = 128
 
 Image.fromarray(depth, mode='L').save(DST)
 print(f"Depth map -> {DST} ({W}x{H})")
