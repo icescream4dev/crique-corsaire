@@ -28,6 +28,7 @@ async function main() {
 
   // Clic pour poser le bâtiment sélectionné
   const canvas = container.querySelector('canvas');
+  const tileHud = document.getElementById('tile-hud');
   if (canvas) {
     canvas.addEventListener('click', (e: MouseEvent) => {
       if (!engine.selectedBuilding) return;
@@ -38,6 +39,13 @@ async function main() {
           document.querySelectorAll('#toolbar button').forEach(b => ((b as HTMLElement).style.outline = 'none'));
           engine.selectBuilding(null);
         }
+      }
+    });
+    // HUD : affiche (x, y) de la case sous la souris. Mis à jour en temps réel.
+    canvas.addEventListener('mousemove', (e: MouseEvent) => {
+      const tile = renderer.getTileAt(e.clientX, e.clientY);
+      if (tileHud) {
+        tileHud.textContent = tile ? `${tile.x}, ${tile.y}` : '—';
       }
     });
   }
