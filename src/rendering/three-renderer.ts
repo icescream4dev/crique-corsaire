@@ -125,7 +125,12 @@ export class ThreeRenderer implements IRenderer {
   private portSpriteH = 0;
   private depthTexture: THREE.Texture | null = null; // depth map (Pixel Depth Offset)
   private contentBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
-  private portVariant: 'spritecook' | 'blender' = 'spritecook'; // source du sprite (toggle A/B)
+  // Source du sprite (cycle A/B/C) :
+  //   spritecook = albedo SpriteCook + depth procédurale (bake depuis l'alpha)
+  //   blender    = albedo Blender + depth Blender brute
+  //   hybrid     = albedo SpriteCook + depth 3D RECALÉE sur les pilotis SpriteCook
+  // (défaut = hybrid : c'est le rendu à évaluer)
+  private portVariant: 'spritecook' | 'blender' | 'hybrid' = 'hybrid';
   private portPreview: THREE.Group | null = null; // surbrillance verte (mode placement)
 
   // World / camera state
@@ -262,9 +267,15 @@ export class ThreeRenderer implements IRenderer {
   }
 
   // Charge (ou recharge) l'albedo + la depth map du ponton selon la variante active.
+  //   spritecook : albedo SpriteCook + depth procédurale (bake-ponton-depth.py)
+  //   blender    : albedo Blender + depth Blender brute (décalée de +7 px — voir audit)
+  //   hybrid     : albedo SpriteCook + depth 3D recalée sur les pilotis SpriteCook
+  //                (realign-depth.py → ponton-blender-depth-aligned.png)
   private async loadPortSprites(): Promise<void> {
     const albedo = this.portVariant === 'blender' ? '/ponton-blender.png' : '/ponton-pirate.png';
-    const depth = this.portVariant === 'blender' ? '/ponton-blender-depth.png' : '/ponton-pirate-depth.png';
+    const depth = this.portVariant === 'blender' ? '/ponton-blender-depth.png'
+      : this.portVariant === 'hybrid' ? '/ponton-blender-depth-aligned.png'
+      : '/ponton-pirate-depth.png';
     try {
       const tex = await this.textureLoader.loadAsync(albedo);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -286,9 +297,11 @@ export class ThreeRenderer implements IRenderer {
     }
   }
 
-  // Bascule SpriteCook <-> Blender et retourne la nouvelle variante.
-  async togglePortSprite(): Promise<'spritecook' | 'blender'> {
-    this.portVariant = this.portVariant === 'blender' ? 'spritecook' : 'blender';
+  // Cycle spritecook → blender → hybrid → spritecook, retourne la nouvelle variante.
+  async togglePortSprite(): Promise<'spritecook' | 'blender' | 'hybrid'> {
+    const order: Array<'spritecook' | 'blender' | 'hybrid'> = ['spritecook', 'blender', 'hybrid'];
+    const next = order[(order.indexOf(this.portVariant) + 1) % order.length];
+    this.portVariant = next;
     await this.loadPortSprites();
     return this.portVariant;
   }

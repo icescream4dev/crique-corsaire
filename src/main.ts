@@ -52,11 +52,12 @@ async function main() {
     if (btn) btn.style.outline = next === 'port' ? '2px solid #ff0' : 'none';
   });
 
-  // Bascule SpriteCook <-> Blender pour comparer visuellement les deux sprites
+  // Bascule SpriteCook → Blender → Hybride → SpriteCook (cycle)
   document.getElementById('btn-sprite')?.addEventListener('click', async () => {
     const v = await renderer.togglePortSprite();
     const btn = document.getElementById('btn-sprite');
-    if (btn) btn.textContent = v === 'blender' ? '🎨 Sprite : Blender' : '🎨 Sprite : SpriteCook';
+    if (btn) btn.textContent = v === 'blender' ? '🎨 Sprite : Blender'
+      : v === 'hybrid' ? '🎨 Sprite : Hybride' : '🎨 Sprite : SpriteCook';
     engine.buildWorld(); // re-rendre avec la nouvelle texture
   });
 }
