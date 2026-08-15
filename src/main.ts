@@ -17,7 +17,13 @@ async function main() {
   renderer.onReady(() => engine.buildWorld()); // rafraîchir quand les assets sont prêts
   const engine = new GameEngine(renderer, new IndexedDBStore(), new SimpleIslandGenerator(), new JsonDataLoader());
 
-  await engine.init(container, Date.now());
+  // Seed : URL ?seed=N force un seed fixe (debug placement port). Sinon Date.now().
+  // Pourquoi : à chaque reload HMR, Date.now() change → nouvelle île → impossible
+  // de comparer "case (42,17) valide ici" entre deux sessions. Avec ?seed=42 la map
+  // est identique à chaque chargement.
+  const urlSeed = new URLSearchParams(window.location.search).get('seed');
+  const seed = urlSeed !== null ? Number(urlSeed) : Date.now();
+  await engine.init(container, seed);
 
   // Clic pour poser le bâtiment sélectionné
   const canvas = container.querySelector('canvas');
