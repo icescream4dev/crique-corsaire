@@ -119,6 +119,7 @@ export class ThreeRenderer implements IRenderer {
   private portSpriteH = 0;
   private depthTexture: THREE.Texture | null = null; // depth map (Pixel Depth Offset)
   private contentBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+  private portVariant: 'spritecook' | 'blender' = 'spritecook'; // source du sprite (toggle A/B)
 
   // World / camera state
   private ww = 0;
@@ -248,15 +249,24 @@ export class ThreeRenderer implements IRenderer {
     this.setupEvents();
 
     // Chargement du sprite du ponton (promesse non bloquante ; fallback cube si absent)
+    await this.loadPortSprites();
+
+    this.onAssetsLoaded?.();
+  }
+
+  // Charge (ou recharge) l'albedo + la depth map du ponton selon la variante active.
+  private async loadPortSprites(): Promise<void> {
+    const albedo = this.portVariant === 'blender' ? '/ponton-blender.png' : '/ponton-pirate.png';
+    const depth = this.portVariant === 'blender' ? '/ponton-blender-depth.png' : '/ponton-pirate-depth.png';
     try {
-      const tex = await this.textureLoader.loadAsync('/ponton-pirate.png');
+      const tex = await this.textureLoader.loadAsync(albedo);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.magFilter = THREE.NearestFilter;
       tex.minFilter = THREE.NearestFilter;
       this.portTexture = this.cropTransparent(tex);
 
       // Depth map (Pixel Depth Offset) : même bbox que l'albedo, données brutes (pas sRGB)
-      const dtex = await this.textureLoader.loadAsync('/ponton-pirate-depth.png');
+      const dtex = await this.textureLoader.loadAsync(depth);
       dtex.colorSpace = THREE.NoColorSpace;
       dtex.magFilter = THREE.NearestFilter;
       dtex.minFilter = THREE.NearestFilter;
@@ -267,8 +277,13 @@ export class ThreeRenderer implements IRenderer {
       this.portTexture = null;
       this.depthTexture = null;
     }
+  }
 
-    this.onAssetsLoaded?.();
+  // Bascule SpriteCook <-> Blender et retourne la nouvelle variante.
+  async togglePortSprite(): Promise<'spritecook' | 'blender'> {
+    this.portVariant = this.portVariant === 'blender' ? 'spritecook' : 'blender';
+    await this.loadPortSprites();
+    return this.portVariant;
   }
 
   onReady(fn: () => void) { this.onAssetsLoaded = fn; }
@@ -759,11 +774,14 @@ export class ThreeRenderer implements IRenderer {
             waterColor = mix(deepColor, abyssColor, clamp((waterDepth - 0.5) / 0.5, 0.0, 1.0));
           }
 
-          float opacity = clamp(0.3 + waterDepth * 2.0, 0.3, 0.9);
+          // Beer-Lambert (k=2.8, unités monde) : eau peu profonde quasi transparente,
+          // eau profonde opaque. L'ancienne opacité linéaire (0.3+waterDepth*2) teintait
+          // les objets immergés en turquoise vif -> remplacée (voir skill).
+          float opacity = 1.0 - exp(-2.8 * max(waterDepth, 0.0));
           vec3 color = mix(bgColor, waterColor, opacity);
 
-          // Écume très fine sur les berges
-          float foam = 1.0 - smoothstep(0.02, 0.06, waterDepth);
+          // Écume très fine sur les berges (épaisseur réduite de moitié deux fois : 0.02 → 0.01)
+          float foam = 1.0 - smoothstep(0.02, 0.03, waterDepth);
           color = mix(color, vec3(0.96, 0.97, 1.0), foam * 0.25);
 
           // Clapotis au large : Voronoï, stop-motion, open sea only
@@ -1043,6 +1061,11 @@ export class ThreeRenderer implements IRenderer {
     const w = this.portSpriteW || TS; // largeur monde du contenu rogné
     const h = this.portSpriteH || TS; // hauteur monde du contenu rogné
     const waterY = 0.0575; // niveau de l'eau : flottaison à 19,5px du bas (0.045 + 5px)
+    // Absorption Beer-Lambert dans le SPRITE (pas dans l'eau) : la partie immergée
+    // s'assombrit vers le noir, jamais vers la couleur de l'eau (sinon turquoise).
+    // absorbK dérivé : ~95 % d'atténuation au bas du sprite (immersion réelle =
+    // PORT_IMMERSION·h − waterY, pas PORT_IMMERSION·h car waterY ≠ 0).
+    const absorbK = -Math.log(0.05) / Math.max(0.001, PORT_IMMERSION * h - waterY);
 
     // Perspective fixe : la caméra a un yaw constant (π/4, voir updateCamera).
     // Tous les sprites partagent donc la MÊME orientation — pas de billboard par position
@@ -1071,20 +1094,28 @@ export class ThreeRenderer implements IRenderer {
         uDepthRange: { value: 1.0 }, // amplitude monde du décalage (offset = (d-0.5)*range)
         uNear: { value: this.camera.near },
         uFar: { value: this.camera.far },
+        uWaterLevel: { value: 0.0 },  // surface de l'eau (Y monde)
+        uAbsorbK: { value: absorbK }, // absorption Beer-Lambert de la partie immergée
       },
       vertexShader: `
         varying vec2 vUv;
+        varying float vWorldY;
         void main() {
           vUv = uv;
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldY = worldPos.y;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: `
         varying vec2 vUv;
+        varying float vWorldY;
         uniform sampler2D uMap;
         uniform sampler2D uDepthMap;
         uniform float uDepthRange;
         uniform float uNear;
         uniform float uFar;
+        uniform float uWaterLevel;
+        uniform float uAbsorbK;
         void main() {
           vec4 tex = texture2D(uMap, vUv);
           if (tex.a < 0.5) discard;
@@ -1092,6 +1123,10 @@ export class ThreeRenderer implements IRenderer {
           // d > 0.5 → plus proche (gl_FragDepth plus petit) ; d < 0.5 → plus loin
           float offset = (d - 0.5) * uDepthRange;
           gl_FragDepth = gl_FragCoord.z - offset / (uFar - uNear);
+          // Absorption : immersion = submersion verticale + profondeur avant/arrière
+          // (le Pixel Depth Offset est le long de l'axe de vue → vertical = ×sin(30°) = ×0.5)
+          float immersion = max(0.0, (uWaterLevel - vWorldY) + (0.5 - d) * uDepthRange * 0.5);
+          tex.rgb *= exp(-uAbsorbK * immersion);
           gl_FragColor = tex;
         }`,
       transparent: true,

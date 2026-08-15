@@ -85,6 +85,35 @@ async function showPonton() {
   renderPonton();
 }
 
+// --- Ponton Blender : couleur + depth map + normal map côte à côte ---
+async function showBlender() {
+  const color = await loadImage('/ponton-blender.png');
+  const depth = await loadImage('/ponton-blender-depth.png');
+  const normal = await loadImage('/ponton-blender-normal.png');
+  app.stage.removeChildren();
+  const scale = 3;
+  const W = app.screen.width, H = app.screen.height;
+  const iw = color.width, ih = color.height;
+  const albedoData = toImageData(color).data;
+  const depthData = toImageData(depth).data;
+  const col = depthColormap({ albedo: color, depthData, albedoData });
+  const spacing = iw * scale + 20;
+
+  const place = (src, cx, label) => {
+    const s = new Sprite(Texture.from(src));
+    s.anchor.set(0.5); s.x = cx; s.y = H / 2; s.scale.set(scale);
+    app.stage.addChild(s);
+    const t = new Text({ text: label, style: new TextStyle({ fontSize: 13, fill: '#ffd700', fontFamily: 'monospace' }) });
+    t.anchor.set(0.5, 0); t.x = cx; t.y = H / 2 + iw * scale / 2 + 10;
+    app.stage.addChild(t);
+  };
+
+  place(color, W / 2 - spacing, 'Couleur (toon B10 EASE)');
+  place(col.canvas, W / 2, 'Depth map');
+  place(normal, W / 2 + spacing, 'Normal map');
+  info.textContent = 'Ponton Blender — couleur + depth map + normal map';
+}
+
 // Simule l'eau sur le sprite : teinte les pixels sous la ligne de flottaison.
 // water_line(y) = flat + PX_PER_UNIT * offset(x), offset = (depth/255 - 0.5).
 function simulateWater(state, flat, useDepth) {
@@ -254,6 +283,7 @@ buildings.push({ id:'water', name:'Eau Caraïbe', emoji:'🌊', description:'Ove
 buildings.push({ id:'foam', name:'Écume', emoji:'🫧', description:'Bande écume 160×160', levels:[{displayName:'Écume de rivage'}], spritePath:'/sprites/foam.png' });
 buildings.push({ id:'ponton-albedo', name:'Ponton pirate (albedo)', emoji:'🪵', kind:'ponton', levels:[{displayName:'Sprite 200×200'}], spritePath:'/ponton-pirate.png' });
 buildings.push({ id:'ponton-depth', name:'Ponton — depth map', emoji:'🕳️', kind:'ponton', levels:[{displayName:'Pixel Depth Offset'}], spritePath:'/ponton-pirate-depth.png' });
+buildings.push({ id:'ponton-blender', name:'Ponton Blender (3 passes)', emoji:'🧪', kind:'blender', levels:[{displayName:'Couleur + depth + normal'}], spritePath:'/ponton-blender.png' });
 
 const texCache = new Map();
 list.innerHTML = '';
@@ -271,6 +301,15 @@ for (const bld of buildings) {
       toolbar.style.display = 'flex';
       legend.style.display = 'block';
       await showPonton();
+      return;
+    }
+
+    if (bld.kind === 'blender') {
+      toolbar.style.display = 'none';
+      controls.style.display = 'none';
+      legend.style.display = 'none';
+      hoverDepth = null;
+      await showBlender();
       return;
     }
 
