@@ -744,9 +744,9 @@ export class ThreeRenderer implements IRenderer {
     const H = tiles.length;
     const W = tiles[0].length;
     const worldW = W * TS, worldH = H * TS;
-    // Résolution canvas : 16 px par tuile (assez pour "x,y" lisible). Carte 80×50
-    // → 1280×800 px. Lisible mais pas énorme.
-    const pxPerTile = 16;
+    // Résolution canvas : 32 px par tuile (assez pour "x,y" lisible sans chevauchement).
+    // Carte 80×50 → 2560×1600 px.
+    const pxPerTile = 32;
     const cnv = document.createElement('canvas');
     cnv.width = W * pxPerTile;
     cnv.height = H * pxPerTile;
