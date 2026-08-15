@@ -786,16 +786,16 @@ export class ThreeRenderer implements IRenderer {
     const mat = new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
-      depthTest: true,
+      depthTest: false, // toujours visible (debug tool) — même à travers les montagnes
       depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -3,
-      polygonOffsetUnits: -3,
       side: THREE.DoubleSide,
     });
     this.gridLabelsMesh = new THREE.Mesh(geo, mat);
-    this.gridLabelsMesh.position.set(worldW / 2, 0.03, worldH / 2);
-    this.gridLabelsMesh.renderOrder = 0.6; // juste au-dessus du grid
+    // Labels en hauteur (Y=0.6 ≈ 6 m) pour passer au-dessus du sprite ghost (~1 u de
+    // haut), mais avec depthTest + renderOrder plus haut que le ghost → toujours
+    // visible même quand le ghost le recouvre en projection iso.
+    this.gridLabelsMesh.position.set(worldW / 2, 0.6, worldH / 2);
+    this.gridLabelsMesh.renderOrder = 2.5; // ghost = 2, labels = 2.5
     this.scene.add(this.gridLabelsMesh);
   }
 
