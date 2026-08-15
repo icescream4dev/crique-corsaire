@@ -112,6 +112,7 @@ export class ThreeRenderer implements IRenderer {
 
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
+  private gridMesh: THREE.Mesh | null = null;
   private waterMesh: THREE.Mesh | null = null;
   private heightGrid: number[][] = []; // hauteurs lissées par sommet (gy,gx), 0 = surface de l'eau
   private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus du sol)
@@ -631,6 +632,7 @@ export class ThreeRenderer implements IRenderer {
 
   renderWorld(island: IslandData): void {
     this.buildTerrain(island.tiles);
+    this.buildGrid(island.width, island.height);
     this.buildWater(island.width, island.height);
     this.buildCloudShadow(island.width, island.height);
     this.buildClouds(island.width, island.height);
@@ -663,6 +665,66 @@ export class ThreeRenderer implements IRenderer {
     mk(worldW / 2, -2, 0xffff44);         // O = −Z (Nord carte) jaune
     this.scene.add(group);
     this.orientationMarkers = group;
+  }
+
+  // Quadrillage des tuiles : plan horizontal au niveau du sol (Y=0.01, juste sous
+  // l'eau) avec un shader qui trace une ligne à chaque frontière de tuile (mod(TS)).
+  // Le grid est OCCLUS par le relief (depthTest:true) → derrière une montagne il
+  // disparaît (cohérent avec la 3D), et devant le terrain grâce à polygonOffset.
+  // RenderOrder 0.5 (entre terrain=0 et eau=1) → visible sur la terre, l'eau le
+  // recouvre localement (laisse le grid visible dans les creux d'eau peu profonde).
+  private buildGrid(w: number, h: number): void {
+    if (this.gridMesh) {
+      this.gridMesh.geometry.dispose();
+      (this.gridMesh.material as THREE.Material).dispose();
+      this.scene.remove(this.gridMesh);
+      this.gridMesh = null;
+    }
+    const worldW = w * TS, worldH = h * TS;
+    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTileSize: { value: TS },
+        uGridColor: { value: new THREE.Color(0xffe066) }, // jaune chaud, contraste max sur sable/eau
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vWorldXZ;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldXZ = wp.xz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        uniform float uTileSize;
+        uniform vec3 uGridColor;
+        varying vec2 vWorldXZ;
+        void main() {
+          // Distance au bord de tuile le plus proche (modulo uTileSize)
+          vec2 m = mod(vWorldXZ, uTileSize);
+          // m ∈ [0, uTileSize] ; distance au bord = min(m, uTileSize - m)
+          float d = min(min(m.x, uTileSize - m.x), min(m.y, uTileSize - m.y));
+          // Ligne fine : anti-aliasing sur 1 px world (~0.02 u)
+          float aa = fwidth(d) * 1.5;
+          float line = 1.0 - smoothstep(aa * 0.5, aa * 1.5, d);
+          // Opacité modérée : visible mais pas envahissant
+          gl_FragColor = vec4(uGridColor, line * 0.55);
+        }
+      `,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      side: THREE.DoubleSide,
+    });
+    this.gridMesh = new THREE.Mesh(geo, mat);
+    this.gridMesh.position.set(0, 0.02, 0); // juste au-dessus du fond marin, sous le relief visible
+    this.gridMesh.renderOrder = 0.5;
+    this.scene.add(this.gridMesh);
   }
 
   private buildWater(w: number, h: number): void {
