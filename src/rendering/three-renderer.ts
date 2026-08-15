@@ -12,7 +12,7 @@ import type { IRenderer } from '../core/ports';
 import type { Tile, IslandData } from '../core/types';
 
 const TS = 0.5; // taille logique d'une tuile en unités monde (mètres)
-const HEIGHT_SCALE = 0.4;
+const HEIGHT_SCALE = 1.0; // getHeight renvoie directement la hauteur monde (1u = 10 m)
 const C: Record<string, THREE.Color> = {
   deep_water:    new THREE.Color(0x1a5276),
   shallow_water: new THREE.Color(0x2980b9),
@@ -86,7 +86,7 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
 `;
 
 // Géométrie lumière/caméra — voir design/reference-lumiere-ombres-reflets.md
-const CLOUD_HEIGHT = 1.5; // hauteur nuage en unités monde (30 m)
+const CLOUD_HEIGHT = 7.0; // hauteur nuage en unités monde (70 m, au-dessus des montagnes à 50 m)
 const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT); // (-1.2, +0.3)
 // L'eau, l'ombre et les nuages sont étendus au-delà de la carte (l'océan continue),
 // sinon leur bord rectiligne est visible quand on panne/dézoome vers le bord du monde.
@@ -580,8 +580,8 @@ export class ThreeRenderer implements IRenderer {
       for (let gy = 0; gy <= H; gy++) {
         for (let gx = 0; gx <= W; gx++) {
           const orig = heightGrid[gy][gx];
-          // Garder les montagnes raides (hauteur > 0.3 → falaise)
-          if (orig > 0.3) continue;
+          // Garder les montagnes raides (hauteur > 2.0 → falaise, 50 m)
+          if (orig > 2.0) continue;
           heightGrid[gy][gx] = smoothedH[gy][gx];
         }
       }
@@ -632,14 +632,16 @@ export class ThreeRenderer implements IRenderer {
   }
 
   private getHeight(tile: Tile): number {
+    // Hauteurs monde (1 u = 10 m), référence Julien : plage ~1,5 m, palm ~3 m,
+    // colline 50 m, eau peu profonde ~1 m.
     switch (tile.terrain) {
-      case 'deep_water': return -2.0;
-      case 'shallow_water': return -0.5;
-      case 'sand': return 0.05;
-      case 'palm': return 0.3;
-      case 'mountain': return 1.5;
+      case 'deep_water': return -0.5;   // -5 m
+      case 'shallow_water': return -0.1; // -1 m
+      case 'sand': return 0.15;          // +1,5 m (plage où atterrit la passerelle)
+      case 'palm': return 0.3;           // +3 m
+      case 'mountain': return 5.0;       // +50 m (collines/falaises)
       case 'cave': return 0.0;
-      case 'cave_water': return -1.0;
+      case 'cave_water': return -0.3;    // -3 m
       default: return 0;
     }
   }
@@ -727,7 +729,7 @@ export class ThreeRenderer implements IRenderer {
           h += wave(vec2(-0.4, 0.9), 0.03, 3.5, 0.5, 0.5, worldPos.xz, time);
           h += wave(vec2(0.8, -0.2), 0.02, 5.0, 1.0, 0.4, worldPos.xz, time);
           h += wave(vec2(-0.6, -0.7), 0.015, 7.0, 0.7, 0.6, worldPos.xz, time);
-          worldPos.y = waterLevel + h * 0.5; // amplitude des vagues réduite de moitié (échelle sprite)
+          worldPos.y = waterLevel + h; // amplitude des vagues ~±50 cm (référence Julien)
           vWorldPos = worldPos.xyz;
           gl_Position = projectionMatrix * viewMatrix * worldPos;
           vScreenPos = gl_Position;
@@ -811,14 +813,14 @@ export class ThreeRenderer implements IRenderer {
 
           vec3 bgColor = texture(sceneColor, uv).rgb;
 
-          // 4 paliers de couleur : lagon → turquoise → profond → abysse
+          // 4 paliers de couleur : lagon (0-1 m) → turquoise (1-4 m) → profond (4-8 m) → abysse
           vec3 waterColor;
-          if (waterDepth < 0.15) {
-            waterColor = mix(shallowColor, midColor, waterDepth / 0.15);
-          } else if (waterDepth < 0.5) {
-            waterColor = mix(midColor, deepColor, (waterDepth - 0.15) / 0.35);
+          if (waterDepth < 0.1) {
+            waterColor = mix(shallowColor, midColor, waterDepth / 0.1);
+          } else if (waterDepth < 0.4) {
+            waterColor = mix(midColor, deepColor, (waterDepth - 0.1) / 0.3);
           } else {
-            waterColor = mix(deepColor, abyssColor, clamp((waterDepth - 0.5) / 0.5, 0.0, 1.0));
+            waterColor = mix(deepColor, abyssColor, clamp((waterDepth - 0.4) / 0.4, 0.0, 1.0));
           }
 
           // Beer-Lambert (k=2.8, unités monde) : eau peu profonde quasi transparente,
@@ -827,8 +829,8 @@ export class ThreeRenderer implements IRenderer {
           float opacity = 1.0 - exp(-2.8 * max(waterDepth, 0.0));
           vec3 color = mix(bgColor, waterColor, opacity);
 
-          // Écume très fine sur les berges (épaisseur réduite de moitié deux fois : 0.02 → 0.01)
-          float foam = 1.0 - smoothstep(0.02, 0.03, waterDepth);
+          // Écume sur les berges (0-50 cm d'eau, cohérent avec l'amplitude ±50 cm)
+          float foam = 1.0 - smoothstep(0.02, 0.05, waterDepth);
           color = mix(color, vec3(0.96, 0.97, 1.0), foam * 0.25);
 
           // Clapotis au large : Voronoï, stop-motion, open sea only
@@ -939,7 +941,7 @@ export class ThreeRenderer implements IRenderer {
     });
 
     this.cloudShadowMesh = new THREE.Mesh(geo, mat);
-    this.cloudShadowMesh.position.set(worldW / 2, 0.8, worldH / 2); // au-dessus des montagnes (~0.6), sous le nuage (1.5)
+    this.cloudShadowMesh.position.set(worldW / 2, 5.2, worldH / 2); // juste au-dessus des montagnes (50 m), sous le nuage (70 m)
     this.cloudShadowMesh.renderOrder = 2; // après le terrain (0) et l'eau (1)
     this.scene.add(this.cloudShadowMesh);
   }
