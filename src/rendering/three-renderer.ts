@@ -123,6 +123,7 @@ export class ThreeRenderer implements IRenderer {
   private heightGrid: number[][] = []; // hauteurs lissées par sommet (gy,gx), 0 = surface de l'eau
   private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus du sol)
   private cloudMesh: THREE.Mesh | null = null;       // nuages visibles (Y = CLOUD_HEIGHT)
+  private orientationMarkers: THREE.Group | null = null; // repères N/S/E/O (débug orientation)
   private cloudTime = 0; // temps partagé eau/ombre/nuage pour des nuages synchronisés
   private sceneRT!: THREE.WebGLRenderTarget; // scene pré-rendue pour l'eau
   private textureLoader = new THREE.TextureLoader();
@@ -648,6 +649,35 @@ export class ThreeRenderer implements IRenderer {
     this.buildWater(island.width, island.height);
     this.buildCloudShadow(island.width, island.height);
     this.buildClouds(island.width, island.height);
+    this.buildOrientationMarkers(island.width, island.height);
+  }
+
+  // Repères cardinaux (débug orientation) : poteaux colorés aux bords de la carte.
+  // Cardinaux dérivés du soleil directionnel (40,50,-10) = NO → ombres SE :
+  //   N = +X, S = −X, E = +Z, O = −Z. Caméra à NE (+X+Z) regardant SO (−X−Z).
+  private buildOrientationMarkers(w: number, h: number): void {
+    if (this.orientationMarkers) {
+      this.scene.remove(this.orientationMarkers);
+      this.orientationMarkers.traverse((o) => {
+        if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); }
+      });
+      this.orientationMarkers = null;
+    }
+    const worldW = w * TS, worldH = h * TS;
+    const group = new THREE.Group();
+    const mk = (x: number, z: number, color: number) => {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.0, 6), new THREE.MeshBasicMaterial({ color }));
+      pole.position.set(x, 1.5, z);
+      const top = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 10), new THREE.MeshBasicMaterial({ color }));
+      top.position.set(x, 3.2, z);
+      group.add(pole, top);
+    };
+    mk(worldW + 2, worldH / 2, 0xff4444); // N = +X (Est carte)  rouge
+    mk(-2, worldH / 2, 0x4488ff);         // S = −X (Ouest carte) bleu
+    mk(worldW / 2, worldH + 2, 0x44ff44); // E = +Z (Sud carte)  vert
+    mk(worldW / 2, -2, 0xffff44);         // O = −Z (Nord carte) jaune
+    this.scene.add(group);
+    this.orientationMarkers = group;
   }
 
   private buildWater(w: number, h: number): void {
@@ -1268,6 +1298,7 @@ export class ThreeRenderer implements IRenderer {
     this.waterMesh = null;
     this.cloudShadowMesh = null;
     this.cloudMesh = null;
+    this.orientationMarkers = null;
     this.portPreview = null;
     this.heightGrid = [];
   }
