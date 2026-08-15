@@ -724,7 +724,10 @@ export class ThreeRenderer implements IRenderer {
       side: THREE.DoubleSide,
     });
     this.gridMesh = new THREE.Mesh(geo, mat);
-    // Centré comme le terrain (qui est positionné à (worldW/2, 0, worldH/2)).
+    // mesh.position = (worldW/2, _, worldH/2) place le PlaneGeometry(worldW, worldH)
+    // entre les coins world (0, _, 0) et (worldW, _, worldH). Les lignes du shader
+    // (mod(vWorldPos.x, TS) == 0) coïncident avec les bords de cellules du terrain,
+    // qui sont aux mêmes positions (gx*TS, _, gy*TS) pour gx ∈ [0, W], gy ∈ [0, H].
     this.gridMesh.position.set(worldW / 2, 0.02, worldH / 2);
     this.gridMesh.renderOrder = 0.5;
     this.scene.add(this.gridMesh);
@@ -791,11 +794,14 @@ export class ThreeRenderer implements IRenderer {
       side: THREE.DoubleSide,
     });
     this.gridLabelsMesh = new THREE.Mesh(geo, mat);
-    // Labels en hauteur (Y=0.6 ≈ 6 m) pour passer au-dessus du sprite ghost (~1 u de
-    // haut), mais avec depthTest + renderOrder plus haut que le ghost → toujours
-    // visible même quand le ghost le recouvre en projection iso.
+    // mesh.position = (worldW/2, 0.6, worldH/2) place le PlaneGeometry entre
+    // world (0, _, 0) et (worldW, _, worldH). L'UV (0,0) tombe sur world (0, _, 0),
+    // et le pixel canvas du label `gx,gy` est centré sur world ((gx+0.5)*TS, _, (gy+0.5)*TS)
+    // = centre exact de la cellule (gx, gy) du terrain. Alignement PARFAIT.
+    // depthTest off + renderOrder 2.5 → labels toujours visibles, même à travers les
+    // montagnes, jamais masqués par les ghosts verts (renderOrder 2).
     this.gridLabelsMesh.position.set(worldW / 2, 0.6, worldH / 2);
-    this.gridLabelsMesh.renderOrder = 2.5; // ghost = 2, labels = 2.5
+    this.gridLabelsMesh.renderOrder = 2.5;
     this.scene.add(this.gridLabelsMesh);
   }
 
