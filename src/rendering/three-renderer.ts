@@ -10,6 +10,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile, IslandData } from '../core/types';
+import { terrainHeight } from '../core/terrain';
 
 const TS = 0.5; // taille logique d'une tuile en unités monde (mètres)
 const HEIGHT_SCALE = 1.0; // getHeight renvoie directement la hauteur monde (1u = 10 m)
@@ -97,14 +98,6 @@ const PORT_IMMERSION = 0.25;
 // Niveau de flottaison du ponton (deck au-dessus de la surface d'eau Y=0). Calibré pour
 // que la ligne d'eau du sprite soit à ~19,5 px au-dessus du bas des pilotis.
 const WATER_Y = 0.0575;
-// Hauteur monde de la passerelle d'accès (coin haut-gauche du sprite) AU-DESSUS du deck.
-// Dérivé du sprite : la passerelle sort au contenu y≈44 px du haut sur 170 px de haut
-// → 0,741·h au-dessus du bas du sprite, dont PORT_IMMERSION·h sous l'eau → 0,49·h au-dessus
-// du deck (waterY). Utilisé par la règle de placement (getPortPlacementGeometry).
-const RAMP_FRACTION = 0.49;
-// Tolérance « s'y enfonce très légèrement » : la passerelle peut s'enfoncer de ~0,2 m
-// (0,01 u) dans le relief avant d'être rejetée.
-const SINK_EPS = 0.01;
 
 export class ThreeRenderer implements IRenderer {
   // Three.js core
@@ -632,18 +625,8 @@ export class ThreeRenderer implements IRenderer {
   }
 
   private getHeight(tile: Tile): number {
-    // Hauteurs monde (1 u = 10 m), référence Julien : plage ~1,5 m, palm ~3 m,
-    // colline 50 m, eau peu profonde ~1 m.
-    switch (tile.terrain) {
-      case 'deep_water': return -0.5;   // -5 m
-      case 'shallow_water': return -0.1; // -1 m
-      case 'sand': return 0.15;          // +1,5 m (plage où atterrit la passerelle)
-      case 'palm': return 0.3;           // +3 m
-      case 'mountain': return 5.0;       // +50 m (collines/falaises)
-      case 'cave': return 0.0;
-      case 'cave_water': return -0.3;    // -3 m
-      default: return 0;
-    }
+    // Hauteurs monde (1 u = 10 m) — table partagée avec le générateur (src/core/terrain.ts).
+    return terrainHeight(tile.terrain);
   }
 
   renderWorld(island: IslandData): void {
@@ -1205,31 +1188,6 @@ export class ThreeRenderer implements IRenderer {
     const top = h00 + (h10 - h00) * tx;
     const bot = h01 + (h11 - h01) * tx;
     return top + (bot - top) * tz;
-  }
-
-  // Géométrie monde du ponton pour la règle de placement. La carte verticale (w×h,
-  // yaw π/4) est centrée sur la tuile ; l'image GAUCHE = accès → monde SO, la DROITE =
-  // poteau le plus à droite → NE. Renvoie null si le sprite n'est pas chargé.
-  getPortPlacementGeometry(gridX: number, gridY: number): {
-    access: { x: number; z: number };
-    deck: { x: number; z: number };
-    piling: { x: number; z: number };
-    waterY: number;
-    rampTop: number;
-  } | null {
-    const w = this.portSpriteW || 0;
-    const h = this.portSpriteH || 0;
-    if (!w || !h) return null;
-    const half = w * Math.SQRT2 / 4; // (w/2)·cos(π/4)
-    const cx = (gridX + 0.5) * TS;
-    const cz = (gridY + 0.5) * TS;
-    return {
-      access: { x: cx - half, z: cz + half }, // passerelle (image gauche → SO)
-      deck: { x: cx, z: cz },                 // centre de la tuile
-      piling: { x: cx + half, z: cz - half }, // poteau le plus à droite (image droite → NE)
-      waterY: WATER_Y,
-      rampTop: WATER_Y + h * RAMP_FRACTION + SINK_EPS,
-    };
   }
 
   // --- Surbrillance verte (mode placement) ---

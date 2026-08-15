@@ -126,18 +126,16 @@ export class GameEngine {
     const t = tile.terrain;
 
     if (defId === 'port') {
-      // Règle géométrique (positions monde du sprite, yaw π/4) :
-      //   - accès (passerelle, coin haut-gauche → SO) : touche le relief — terrain entre
-      //     le deck (waterY) et le haut de la passerelle (rampTop), avec légère tolérance
-      //     d'enfoncement ;
-      //   - deck (centre) : au-dessus du sol (terrain < waterY) ;
-      //   - poteau le plus à droite (NE) : dans l'eau (terrain < 0).
-      const g = this.renderer.getPortPlacementGeometry(x, y);
-      if (!g) return false;
-      const ha = this.renderer.sampleGroundHeight(g.access.x, g.access.z);
-      const hd = this.renderer.sampleGroundHeight(g.deck.x, g.deck.z);
-      const hr = this.renderer.sampleGroundHeight(g.piling.x, g.piling.z);
-      return ha >= g.waterY && ha <= g.rampTop && hd < g.waterY && hr < 0;
+      // Empreinte 1×1. La tuile est en eau peu profonde (poteaux dans l'eau), et
+      // l'accès (passerelle, image GAUCHE → SE = grille (x-1, y+1)) touche la terre
+      // ferme. Les tuiles submergées ont été reclassées shallow_water à la génération,
+      // donc « terre ferme » = type non-eau → pur test de tuiles (norme AOE2).
+      if (t !== 'shallow_water') return false;
+      for (const [dx, dy] of [[-1, 1], [0, 1], [-1, 0]]) {
+        const nt = this.state.island.tiles[y + dy]?.[x + dx]?.terrain;
+        if (nt && nt !== 'deep_water' && nt !== 'shallow_water') return true;
+      }
+      return false;
     }
     // Par défaut : n'importe quelle tuile terrestre
     return t !== 'deep_water' && t !== 'shallow_water';

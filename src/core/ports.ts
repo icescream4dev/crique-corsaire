@@ -19,14 +19,6 @@ export interface IRenderer {
   getTileAt(screenX: number, screenY: number): { x: number; y: number } | null;
   /** Hauteur lissée du terrain au point monde (wx, wz), interpolation bilinéaire (NaN hors carte). */
   sampleGroundHeight(wx: number, wz: number): number;
-  /** Géométrie monde du ponton pour le placement (accès SO, deck centre, poteau droit NE), null si sprite absent. */
-  getPortPlacementGeometry(gridX: number, gridY: number): {
-    access: { x: number; z: number };
-    deck: { x: number; z: number };
-    piling: { x: number; z: number };
-    waterY: number;
-    rampTop: number;
-  } | null;
   /** Affiche / retire la surbrillance verte du ponton sur les tuiles données (mode placement). */
   setPortPreview(positions: { x: number; z: number }[]): void;
 }

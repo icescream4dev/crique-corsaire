@@ -4,6 +4,7 @@
 
 import type { IWorldGenerator, GenerationParams } from '../core/ports';
 import type { IslandData, Tile } from '../core/types';
+import { reclassifySubmerged } from '../core/terrain';
 
 const hh=(x:number,y:number,s:number)=>{const n=Math.sin(x*127.1+y*311.7+s*73.19)*43758.5453;return n-Math.floor(n)};
 const nn=(x:number,y:number,s:number)=>{const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);return hh(ix,iy,s)*(1-sx)*(1-sy)+hh(ix+1,iy,s)*sx*(1-sy)+hh(ix,iy+1,s)*(1-sx)*sy+hh(ix+1,iy+1,s)*sx*sy};
@@ -118,6 +119,11 @@ export class SimpleIslandGenerator implements IWorldGenerator {
     // Ajuster montagne
     if(mntC<mntTgt){const allPalm:([number,number,number])[]=[];for(const il of islands)for(const[x,y]of il)if(T[y][x].terrain==='palm')allPalm.push([x,y,fb(x*.06,y*.06,seed+999,5)]);allPalm.sort((a,b)=>b[2]-a[2]);for(const[x,y]of allPalm){if(mntC>=mntTgt)break;T[y][x].terrain='mountain';mntC++;}}
     if(mntC>mntTgt+5){const allMnt:([number,number,number])[]=[];for(const il of islands)for(const[x,y]of il)if(T[y][x].terrain==='mountain')allMnt.push([x,y,fb(x*.06,y*.06,seed+999,5)]);allMnt.sort((a,b)=>a[2]-b[2]);for(const[x,y]of allMnt){if(mntC<=mntTgt)break;T[y][x].terrain='palm';mntC--;}}
+
+    // Reclassement : les tuiles de terre dont la hauteur lissée est < 0 (submergées
+    // visuellement) deviennent de l'eau peu profonde → grille cohérente avec le rendu,
+    // placement tile-based possible.
+    reclassifySubmerged(T);
 
     // Shore + cliffs + resources
     const sh:{x:number;y:number}[]=[],cl:{x:number;y:number;direction:'n'|'s'|'e'|'w'}[]=[];
