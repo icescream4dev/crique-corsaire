@@ -26,29 +26,21 @@ async function main() {
   const seed = urlSeed !== null ? Number(urlSeed) : 42;
   await engine.init(container, seed);
 
-  // Clic (desktop) / tap (mobile) pour poser le bâtiment sélectionné, OU afficher
-      // les coordonnées de la case touchée dans le HUD. Tap long = placer.
-      const canvas = container.querySelector('canvas');
-          const tileHud = document.getElementById('tile-hud');
-          if (canvas) {
-            // Tap (mobile) : affiche les coordonnées de la case touchée dans le HUD.
-            canvas.addEventListener('touchstart', (e: TouchEvent) => {
-              const t = e.touches[0];
-              const tile = renderer.getTileAt(t.clientX, t.clientY);
-              if (tileHud && tile) tileHud.textContent = `${tile.x}, ${tile.y}`;
-            }, { passive: true });
-        canvas.addEventListener('click', (e: MouseEvent) => {
-          if (!engine.selectedBuilding) return;
-          const tile = renderer.getTileAt(e.clientX, e.clientY);
-          if (tile) {
-            const ok = engine.placeBuilding(engine.selectedBuilding, tile.x, tile.y);
-            if (ok) {
-              document.querySelectorAll('#toolbar button').forEach(b => ((b as HTMLElement).style.outline = 'none'));
-              engine.selectBuilding(null);
-            }
+  // Clic pour poser le bâtiment sélectionné
+    const canvas = container.querySelector('canvas');
+    if (canvas) {
+      canvas.addEventListener('click', (e: MouseEvent) => {
+        if (!engine.selectedBuilding) return;
+        const tile = renderer.getTileAt(e.clientX, e.clientY);
+        if (tile) {
+          const ok = engine.placeBuilding(engine.selectedBuilding, tile.x, tile.y);
+          if (ok) {
+            document.querySelectorAll('#toolbar button').forEach(b => ((b as HTMLElement).style.outline = 'none'));
+            engine.selectBuilding(null);
           }
-        });
-      }
+        }
+      });
+    }
 
   (window as any).gameEngine = engine;
 

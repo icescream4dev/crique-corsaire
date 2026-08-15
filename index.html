@@ -9,7 +9,6 @@
       #game-container { width: 100%; height: 100%; }
       #game-container canvas { image-rendering: pixelated; display: block; }
       #hud { position: fixed; top: 8px; left: 8px; z-index: 20; color: rgba(255,255,255,0.7); font-size: 13px; pointer-events: none; }
-    #tile-hud { position: fixed; top: 8px; right: 50%; transform: translateX(50%); z-index: 20; color: #ffe066; font-size: 16px; font-weight: bold; padding: 6px 14px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,230,102,0.5); border-radius: 4px; pointer-events: none; font-family: monospace; }
       /* Boussole HUD : positions écran des cardinaux (caméra NE regardant SO) */
       #compass { position: fixed; left: 16px; bottom: 16px; z-index: 20; width: 90px; height: 90px; pointer-events: none; font-family: monospace; }
       #compass div { position: absolute; font-size: 13px; font-weight: bold; color: #fff; text-shadow: 0 0 3px #000; }
@@ -25,7 +24,6 @@
   </head>
   <body>
     <div id="hud">🏴‍☠️ Crique Corsaire</div>
-    <div id="tile-hud">—</div>
     <div id="compass">
       <div class="c-n">N</div><div class="c-w">O</div><div class="c-e">E</div><div class="c-s">S</div>
       <div class="c-legend">N=+X · S=−X · E=+Z · O=−Z</div>

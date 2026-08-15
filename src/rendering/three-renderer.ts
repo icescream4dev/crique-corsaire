@@ -112,8 +112,6 @@ export class ThreeRenderer implements IRenderer {
 
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
-  private gridMesh: THREE.Mesh | null = null;
-  private gridLabelsGroup: THREE.Group | null = null; // sprites 3D un par case shallow/land
   private waterMesh: THREE.Mesh | null = null;
   private heightGrid: number[][] = []; // hauteurs lissées par sommet (gy,gx), 0 = surface de l'eau
   private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus du sol)
@@ -633,8 +631,6 @@ export class ThreeRenderer implements IRenderer {
 
   renderWorld(island: IslandData): void {
     this.buildTerrain(island.tiles);
-    this.buildGrid(island.width, island.height);
-    this.buildGridLabels(island.tiles);
     this.buildWater(island.width, island.height);
     this.buildCloudShadow(island.width, island.height);
     this.buildClouds(island.width, island.height);
@@ -667,135 +663,6 @@ export class ThreeRenderer implements IRenderer {
     mk(worldW / 2, -2, 0xffff44);         // O = −Z (Nord carte) jaune
     this.scene.add(group);
     this.orientationMarkers = group;
-  }
-
-  // Quadrillage des tuiles : plan horizontal au niveau du sol (Y=0.01, juste sous
-  // l'eau) avec un shader qui trace une ligne à chaque frontière de tuile (mod(TS)).
-  // Le grid est OCCLUS par le relief (depthTest:true) → derrière une montagne il
-  // disparaît (cohérent avec la 3D), et devant le terrain grâce à polygonOffset.
-  // RenderOrder 0.5 (entre terrain=0 et eau=1) → visible sur la terre, l'eau le
-  // recouvre localement (laisse le grid visible dans les creux d'eau peu profonde).
-  private buildGrid(w: number, h: number): void {
-    if (this.gridMesh) {
-      this.gridMesh.geometry.dispose();
-      (this.gridMesh.material as THREE.Material).dispose();
-      this.scene.remove(this.gridMesh);
-      this.gridMesh = null;
-    }
-    const worldW = w * TS, worldH = h * TS;
-    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uTileSize: { value: TS },
-        uGridColor: { value: new THREE.Color(0xffe066) }, // jaune chaud, contraste max sur sable/eau
-      },
-      vertexShader: /* glsl */ `
-        varying vec2 vWorldXZ;
-        void main() {
-          vec4 wp = modelMatrix * vec4(position, 1.0);
-          vWorldXZ = wp.xz;
-          gl_Position = projectionMatrix * viewMatrix * wp;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        precision highp float;
-        uniform float uTileSize;
-        uniform vec3 uGridColor;
-        varying vec2 vWorldXZ;
-        void main() {
-          // Distance au bord de tuile le plus proche (modulo uTileSize)
-          vec2 m = mod(vWorldXZ, uTileSize);
-          // m ∈ [0, uTileSize] ; distance au bord = min(m, uTileSize - m)
-          float d = min(min(m.x, uTileSize - m.x), min(m.y, uTileSize - m.y));
-          // Ligne fine : anti-aliasing sur 1 px world (~0.02 u)
-          float aa = fwidth(d) * 1.5;
-          float line = 1.0 - smoothstep(aa * 0.5, aa * 1.5, d);
-          // Opacité modérée : visible mais pas envahissant
-          gl_FragColor = vec4(uGridColor, line * 0.55);
-        }
-      `,
-      transparent: true,
-      depthTest: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-      side: THREE.DoubleSide,
-    });
-    this.gridMesh = new THREE.Mesh(geo, mat);
-    // mesh.position = (worldW/2, _, worldH/2) place le PlaneGeometry(worldW, worldH)
-    // entre les coins world (0, _, 0) et (worldW, _, worldH). Les lignes du shader
-    // (mod(vWorldPos.x, TS) == 0) coïncident avec les bords de cellules du terrain,
-    // qui sont aux mêmes positions (gx*TS, _, gy*TS) pour gx ∈ [0, W], gy ∈ [0, H].
-    this.gridMesh.position.set(worldW / 2, 0.02, worldH / 2);
-    this.gridMesh.renderOrder = 0.5;
-    this.scene.add(this.gridMesh);
-  }
-
-  // Labels de coordonnées (x,y) au centre de chaque tuile shallow_water. Approche
-  // sprite-par-sprite (pas de CanvasTexture globale) : chaque label = 1 THREE.Sprite
-  // avec sa propre CanvasTexture, positionné au centre monde de la cellule. Avantages :
-  // alignement parfait (la position du sprite = position du centre cellule), pas
-  // d'inversion Y due à flipY, pas de masquage par depth test (renderOrder 2.5).
-  // Coût : ~800 sprites pour une map de 80×50. Acceptable.
-  private buildGridLabels(tiles: Tile[][]): void {
-    if (this.gridLabelsGroup) {
-      this.scene.remove(this.gridLabelsGroup);
-      this.gridLabelsGroup.traverse((o) => {
-        if (o instanceof THREE.Sprite) {
-          (o.material as THREE.SpriteMaterial).map?.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
-      this.gridLabelsGroup = null;
-    }
-    const H = tiles.length;
-    const W = tiles[0].length;
-    const group = new THREE.Group();
-    const pxW = 64, pxH = 28;
-    const fontSize = 20;
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const t = tiles[y][x].terrain;
-        const isShallow = t === 'shallow_water';
-        const isLand = t !== 'deep_water' && t !== 'shallow_water';
-        if (!isShallow && !isLand) continue;
-        const cnv = document.createElement('canvas');
-        cnv.width = pxW; cnv.height = pxH;
-        const ctx = cnv.getContext('2d')!;
-        ctx.clearRect(0, 0, pxW, pxH);
-        ctx.font = `bold ${fontSize}px monospace`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const fill = isShallow ? 'rgba(255, 230, 102, 0.95)' : 'rgba(255, 255, 255, 0.8)';
-        const stroke = 'rgba(0, 0, 0, 0.85)';
-        ctx.fillStyle = fill;
-        ctx.strokeStyle = stroke;
-        ctx.lineWidth = 2;
-        const label = `${x},${y}`;
-        ctx.strokeText(label, pxW / 2, pxH / 2);
-        ctx.fillText(label, pxW / 2, pxH / 2);
-        const tex = new THREE.CanvasTexture(cnv);
-        tex.minFilter = THREE.LinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.needsUpdate = true;
-        const mat = new THREE.SpriteMaterial({
-          map: tex,
-          transparent: true,
-          depthTest: false,
-          depthWrite: false,
-        });
-        const sprite = new THREE.Sprite(mat);
-        sprite.position.set((x + 0.5) * TS, 0.8, (y + 0.5) * TS);
-        sprite.scale.set(0.5, 0.22, 1);
-        sprite.renderOrder = 2.5;
-        group.add(sprite);
-      }
-    }
-    this.scene.add(group);
-    this.gridLabelsGroup = group;
   }
 
   private buildWater(w: number, h: number): void {
@@ -1394,16 +1261,7 @@ export class ThreeRenderer implements IRenderer {
     this.terrainMesh = null;
     this.waterMesh = null;
     this.cloudShadowMesh = null;
-    this.gridMesh = null;
-    if (this.gridLabelsGroup) {
-      this.gridLabelsGroup.traverse((o) => {
-        if (o instanceof THREE.Sprite) {
-          (o.material as THREE.SpriteMaterial).map?.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
-      this.gridLabelsGroup = null;
-    }
+    this.cloudMesh = null;
     this.orientationMarkers = null;
     this.portPreview = null;
     this.heightGrid = [];
