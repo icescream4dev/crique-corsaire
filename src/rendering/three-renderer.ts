@@ -113,7 +113,7 @@ export class ThreeRenderer implements IRenderer {
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
   private gridMesh: THREE.Mesh | null = null;
-  private gridLabelsMesh: THREE.Mesh | null = null;
+  private gridLabelsGroup: THREE.Group | null = null; // sprites 3D un par case shallow/land
   private waterMesh: THREE.Mesh | null = null;
   private heightGrid: number[][] = []; // hauteurs lissées par sommet (gy,gx), 0 = surface de l'eau
   private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus du sol)
@@ -733,76 +733,69 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(this.gridMesh);
   }
 
-  // Labels de coordonnées (x,y) centrés sur chaque tuile. Canvas 2D → CanvasTexture →
-  // Mesh贴在même plan que le grid (Y=0.03, juste au-dessus). Permet de discuter le
-  // placement en donnant des coordonnées matrice. On n'affiche que les tuiles
-  // candidates au port (shallow_water) + leurs voisins de terre, pour ne pas saturer.
+  // Labels de coordonnées (x,y) au centre de chaque tuile shallow_water. Approche
+  // sprite-par-sprite (pas de CanvasTexture globale) : chaque label = 1 THREE.Sprite
+  // avec sa propre CanvasTexture, positionné au centre monde de la cellule. Avantages :
+  // alignement parfait (la position du sprite = position du centre cellule), pas
+  // d'inversion Y due à flipY, pas de masquage par depth test (renderOrder 2.5).
+  // Coût : ~800 sprites pour une map de 80×50. Acceptable.
   private buildGridLabels(tiles: Tile[][]): void {
-    if (this.gridLabelsMesh) {
-      this.gridLabelsMesh.geometry.dispose();
-      (this.gridLabelsMesh.material as THREE.Material).dispose();
-      this.scene.remove(this.gridLabelsMesh);
-      this.gridLabelsMesh = null;
+    if (this.gridLabelsGroup) {
+      this.scene.remove(this.gridLabelsGroup);
+      this.gridLabelsGroup.traverse((o) => {
+        if (o instanceof THREE.Sprite) {
+          (o.material as THREE.SpriteMaterial).map?.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+      this.gridLabelsGroup = null;
     }
     const H = tiles.length;
     const W = tiles[0].length;
-    const worldW = W * TS, worldH = H * TS;
-    // Résolution canvas : 96 px par tuile, font 28 px bold. "79,49" = ~84 px tient dans
-        // 96 px avec marge. Carte 80×50 → 7680×4800 px (~37 MB RAM, OK).
-        // Au zoom 1 (tuile = ~16 px écran), le texte 28 px canvas → ~5 px écran.
-        // Pour qu'il soit lisible il faut zoomer (molette) au moins ×2.
-        const pxPerTile = 96;
-        const fontSize = 28;
-    const cnv = document.createElement('canvas');
-    cnv.width = W * pxPerTile;
-    cnv.height = H * pxPerTile;
-    const ctx = cnv.getContext('2d')!;
-    ctx.font = `bold ${fontSize}px monospace`;
-    ctx.clearRect(0, 0, cnv.width, cnv.height);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    const group = new THREE.Group();
+    const pxW = 64, pxH = 28;
+    const fontSize = 20;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const t = tiles[y][x].terrain;
-        // Uniquement les tuiles shallow_water (candidates au port). La terre est
-        // déductible par adjacence aux shallow labelisées.
-        if (t !== 'shallow_water') continue;
-        // Jaune vif + stroke noir (contraste max sur eau + terre en arrière-plan)
-        ctx.fillStyle = 'rgba(255, 230, 102, 0.95)';
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+        const isShallow = t === 'shallow_water';
+        const isLand = t !== 'deep_water' && t !== 'shallow_water';
+        if (!isShallow && !isLand) continue;
+        const cnv = document.createElement('canvas');
+        cnv.width = pxW; cnv.height = pxH;
+        const ctx = cnv.getContext('2d')!;
+        ctx.clearRect(0, 0, pxW, pxH);
+        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const fill = isShallow ? 'rgba(255, 230, 102, 0.95)' : 'rgba(255, 255, 255, 0.8)';
+        const stroke = 'rgba(0, 0, 0, 0.85)';
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = stroke;
         ctx.lineWidth = 2;
-        const cx = x * pxPerTile + pxPerTile / 2;
-        // Y inversé sur le canvas (Y=0 en haut) par rapport à la grille (Y=0 en bas)
-        const cy = (H - 1 - y) * pxPerTile + pxPerTile / 2;
         const label = `${x},${y}`;
-        ctx.strokeText(label, cx, cy);
-        ctx.fillText(label, cx, cy);
+        ctx.strokeText(label, pxW / 2, pxH / 2);
+        ctx.fillText(label, pxW / 2, pxH / 2);
+        const tex = new THREE.CanvasTexture(cnv);
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.needsUpdate = true;
+        const mat = new THREE.SpriteMaterial({
+          map: tex,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.position.set((x + 0.5) * TS, 0.8, (y + 0.5) * TS);
+        sprite.scale.set(0.5, 0.22, 1);
+        sprite.renderOrder = 2.5;
+        group.add(sprite);
       }
     }
-    const tex = new THREE.CanvasTexture(cnv);
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.needsUpdate = true;
-    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex,
-      transparent: true,
-      depthTest: false, // toujours visible (debug tool) — même à travers les montagnes
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    this.gridLabelsMesh = new THREE.Mesh(geo, mat);
-    // mesh.position = (worldW/2, 0.6, worldH/2) place le PlaneGeometry entre
-    // world (0, _, 0) et (worldW, _, worldH). L'UV (0,0) tombe sur world (0, _, 0),
-    // et le pixel canvas du label `gx,gy` est centré sur world ((gx+0.5)*TS, _, (gy+0.5)*TS)
-    // = centre exact de la cellule (gx, gy) du terrain. Alignement PARFAIT.
-    // depthTest off + renderOrder 2.5 → labels toujours visibles, même à travers les
-    // montagnes, jamais masqués par les ghosts verts (renderOrder 2).
-    this.gridLabelsMesh.position.set(worldW / 2, 0.6, worldH / 2);
-    this.gridLabelsMesh.renderOrder = 2.5;
-    this.scene.add(this.gridLabelsMesh);
+    this.scene.add(group);
+    this.gridLabelsGroup = group;
   }
 
   private buildWater(w: number, h: number): void {
@@ -1401,7 +1394,16 @@ export class ThreeRenderer implements IRenderer {
     this.terrainMesh = null;
     this.waterMesh = null;
     this.cloudShadowMesh = null;
-    this.cloudMesh = null;
+    this.gridMesh = null;
+    if (this.gridLabelsGroup) {
+      this.gridLabelsGroup.traverse((o) => {
+        if (o instanceof THREE.Sprite) {
+          (o.material as THREE.SpriteMaterial).map?.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+      this.gridLabelsGroup = null;
+    }
     this.orientationMarkers = null;
     this.portPreview = null;
     this.heightGrid = [];
