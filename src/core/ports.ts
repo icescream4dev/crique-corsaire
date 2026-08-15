@@ -17,6 +17,10 @@ export interface IRenderer {
   onResize(): void;
   /** Retourne la tile sous la souris (pour le clic). */
   getTileAt(screenX: number, screenY: number): { x: number; y: number } | null;
+  /** Hauteur lissée du terrain à la tuile (x,y) en unités monde (0 = surface de l'eau). */
+  getGroundHeight(x: number, y: number): number;
+  /** Affiche / retire la surbrillance verte du ponton sur les tuiles données (mode placement). */
+  setPortPreview(positions: { x: number; z: number }[]): void;
 }
 
 /** Abstraction de la persistence (sauvegarde/chargement). */

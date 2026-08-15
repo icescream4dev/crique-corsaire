@@ -94,6 +94,30 @@ export class GameEngine {
         if (tile.buildings.length) this.renderer.renderBuilding(tile);
       }
     }
+    // Ré-appliquer la surbrillance de placement (clear() l'a retirée)
+    this.updatePlacementPreview();
+  }
+
+  /** Sélectionne/désélectionne un bâtiment à poser et met à jour la surbrillance. */
+  selectBuilding(defId: string | null): void {
+    this.selectedBuilding = defId;
+    this.updatePlacementPreview();
+  }
+
+  /** Affiche le sprite en surbrillance verte sur les tuiles où la pose est valide. */
+  private updatePlacementPreview(): void {
+    if (this.selectedBuilding === 'port') {
+      const pos: { x: number; z: number }[] = [];
+      const tiles = this.state.island.tiles;
+      for (let y = 0; y < tiles.length; y++) {
+        for (let x = 0; x < tiles[y].length; x++) {
+          if (this.canPlace('port', x, y)) pos.push({ x, z: y });
+        }
+      }
+      this.renderer.setPortPreview(pos);
+    } else {
+      this.renderer.setPortPreview([]);
+    }
   }
 
   canPlace(defId: string, x: number, y: number): boolean {
@@ -102,11 +126,15 @@ export class GameEngine {
     const t = tile.terrain;
 
     if (defId === 'port') {
-      // shallow_water + terre au nord-ouest (le sprite a la connexion terre en haut)
+      // Poteaux sous l'eau : la tuile du ponton doit être en eau peu profonde.
       if (t !== 'shallow_water') return false;
+      // L'accès (coin haut-gauche du sprite → NO après yaw π/4) doit toucher de la
+      // TERRE FERME. On teste la HAUTEUR LISSÉE > 0 (au-dessus de la surface Y=0),
+      // PAS le type : le sable côtier ('sand', hauteur brute +0.02) est tiré sous 0
+      // par le lissage box blur → la mer le recouvre. Un type non-eau submergé
+      // faisait paraître le ponton posé en pleine mer.
       for (const [dx, dy] of [[-1,-1],[0,-1],[-1,0]]) {
-        const nt = this.state.island.tiles[y+dy]?.[x+dx]?.terrain;
-        if (nt && nt !== 'deep_water' && nt !== 'shallow_water') return true;
+        if (this.renderer.getGroundHeight(x + dx, y + dy) > 0) return true;
       }
       return false;
     }

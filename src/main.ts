@@ -29,7 +29,7 @@ async function main() {
         const ok = engine.placeBuilding(engine.selectedBuilding, tile.x, tile.y);
         if (ok) {
           document.querySelectorAll('#toolbar button').forEach(b => ((b as HTMLElement).style.outline = 'none'));
-          engine.selectedBuilding = null;
+          engine.selectBuilding(null);
         }
       }
     });
@@ -39,9 +39,10 @@ async function main() {
 
   document.getElementById('btn-regenerate')?.addEventListener('click', () => engine.regenerate());
   document.getElementById('btn-port')?.addEventListener('click', () => {
-    engine.selectedBuilding = engine.selectedBuilding === 'port' ? null : 'port';
+    const next = engine.selectedBuilding === 'port' ? null : 'port';
+    engine.selectBuilding(next);
     const btn = document.getElementById('btn-port');
-    if (btn) btn.style.outline = engine.selectedBuilding === 'port' ? '2px solid #ff0' : 'none';
+    if (btn) btn.style.outline = next === 'port' ? '2px solid #ff0' : 'none';
   });
 
   // Bascule SpriteCook <-> Blender pour comparer visuellement les deux sprites

@@ -109,6 +109,7 @@ export class ThreeRenderer implements IRenderer {
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
   private waterMesh: THREE.Mesh | null = null;
+  private heightGrid: number[][] = []; // hauteurs lissées par sommet (gy,gx), 0 = surface de l'eau
   private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus du sol)
   private cloudMesh: THREE.Mesh | null = null;       // nuages visibles (Y = CLOUD_HEIGHT)
   private cloudTime = 0; // temps partagé eau/ombre/nuage pour des nuages synchronisés
@@ -120,6 +121,7 @@ export class ThreeRenderer implements IRenderer {
   private depthTexture: THREE.Texture | null = null; // depth map (Pixel Depth Offset)
   private contentBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
   private portVariant: 'spritecook' | 'blender' = 'spritecook'; // source du sprite (toggle A/B)
+  private portPreview: THREE.Group | null = null; // surbrillance verte (mode placement)
 
   // World / camera state
   private ww = 0;
@@ -572,6 +574,10 @@ export class ThreeRenderer implements IRenderer {
         }
       }
     }
+
+    // Exposer la hauteur lissée finale (0 = surface de l'eau) pour le placement
+    // des bâtiments (le type 'sand' côtier est tiré sous 0 par le lissage → submergé).
+    this.heightGrid = heightGrid;
 
     // Déplacement vertical + correspondance grille
     // Après rotateX(-PI/2): X→X (largeur), Z→Y (profondeur), Y→0
@@ -1141,6 +1147,63 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(sprite);
   }
 
+  // --- Hauteur lissée (pour le placement) ---
+
+  getGroundHeight(x: number, y: number): number {
+    return this.heightGrid[y]?.[x] ?? -1;
+  }
+
+  // --- Surbrillance verte (mode placement) ---
+
+  // Affiche le sprite ponton en vert translucide sur chaque tuile valide.
+  // Réutilise la MÊME position/orientation que le vrai sprite (yaw π/4, base
+  // immergée) pour que l'aperçu soit fidèle à l'emplacement final.
+  setPortPreview(positions: { x: number; z: number }[]): void {
+    if (this.portPreview) {
+      this.scene.remove(this.portPreview);
+      this.portPreview.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+      this.portPreview = null;
+    }
+    if (!positions.length || !this.portTexture) return;
+
+    const w = this.portSpriteW || TS;
+    const h = this.portSpriteH || TS;
+    const waterY = 0.0575;
+    const yaw = Math.PI / 4;
+    const geo = new THREE.PlaneGeometry(w, h);
+    // Vert translucide : le sprite entier est teinté vert (surbrillance), sa forme
+    // vient de l'alpha du sprite (alphaTest). depthWrite:false → n'interfère pas avec
+    // la depth map du vrai sprite ni avec l'eau.
+    const mat = new THREE.MeshBasicMaterial({
+      map: this.portTexture,
+      color: 0x37f25c,
+      transparent: true,
+      opacity: 0.6,
+      alphaTest: 0.5,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    const group = new THREE.Group();
+    for (const p of positions) {
+      const cx = (p.x + 0.5) * TS;
+      const cz = (p.z + 0.5) * TS;
+      const m = new THREE.Mesh(geo, mat);
+      m.rotation.y = yaw;
+      m.position.set(cx, waterY + h * (0.5 - PORT_IMMERSION), cz);
+      m.renderOrder = 2;
+      group.add(m);
+    }
+    group.renderOrder = 2;
+    this.scene.add(group);
+    this.portPreview = group;
+  }
+
   // --- Clear ---
 
   clear(): void {
@@ -1158,6 +1221,8 @@ export class ThreeRenderer implements IRenderer {
     this.waterMesh = null;
     this.cloudShadowMesh = null;
     this.cloudMesh = null;
+    this.portPreview = null;
+    this.heightGrid = [];
   }
 
   // --- Raycasting ---
