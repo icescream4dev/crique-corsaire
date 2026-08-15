@@ -113,6 +113,7 @@ export class ThreeRenderer implements IRenderer {
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
   private gridMesh: THREE.Mesh | null = null;
+  private gridLabelsMesh: THREE.Mesh | null = null;
   private waterMesh: THREE.Mesh | null = null;
   private heightGrid: number[][] = []; // hauteurs lissées par sommet (gy,gx), 0 = surface de l'eau
   private cloudShadowMesh: THREE.Mesh | null = null; // plan d'ombre nuage (au-dessus du sol)
@@ -633,6 +634,7 @@ export class ThreeRenderer implements IRenderer {
   renderWorld(island: IslandData): void {
     this.buildTerrain(island.tiles);
     this.buildGrid(island.width, island.height);
+    this.buildGridLabels(island.tiles);
     this.buildWater(island.width, island.height);
     this.buildCloudShadow(island.width, island.height);
     this.buildClouds(island.width, island.height);
@@ -726,6 +728,78 @@ export class ThreeRenderer implements IRenderer {
     this.gridMesh.position.set(worldW / 2, 0.02, worldH / 2);
     this.gridMesh.renderOrder = 0.5;
     this.scene.add(this.gridMesh);
+  }
+
+  // Labels de coordonnées (x,y) centrés sur chaque tuile. Canvas 2D → CanvasTexture →
+  // Mesh贴在même plan que le grid (Y=0.03, juste au-dessus). Permet de discuter le
+  // placement en donnant des coordonnées matrice. On n'affiche que les tuiles
+  // candidates au port (shallow_water) + leurs voisins de terre, pour ne pas saturer.
+  private buildGridLabels(tiles: Tile[][]): void {
+    if (this.gridLabelsMesh) {
+      this.gridLabelsMesh.geometry.dispose();
+      (this.gridLabelsMesh.material as THREE.Material).dispose();
+      this.scene.remove(this.gridLabelsMesh);
+      this.gridLabelsMesh = null;
+    }
+    const H = tiles.length;
+    const W = tiles[0].length;
+    const worldW = W * TS, worldH = H * TS;
+    // Résolution canvas : 16 px par tuile (assez pour "x,y" lisible). Carte 80×50
+    // → 1280×800 px. Lisible mais pas énorme.
+    const pxPerTile = 16;
+    const cnv = document.createElement('canvas');
+    cnv.width = W * pxPerTile;
+    cnv.height = H * pxPerTile;
+    const ctx = cnv.getContext('2d')!;
+    ctx.clearRect(0, 0, cnv.width, cnv.height);
+    ctx.font = `${Math.floor(pxPerTile * 0.65)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const t = tiles[y][x].terrain;
+        const isShallow = t === 'shallow_water';
+        const isLand = t !== 'deep_water' && t !== 'shallow_water';
+        if (!isShallow && !isLand) continue; // ne label que les candidats + terre
+        // Couleur : jaune sur eau (contraste), blanc sur terre
+        if (isShallow) {
+          ctx.fillStyle = 'rgba(255, 230, 102, 0.95)';
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+          ctx.lineWidth = 1;
+        } else {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.lineWidth = 1;
+        }
+        const cx = x * pxPerTile + pxPerTile / 2;
+        // Y inversé sur le canvas (Y=0 en haut) par rapport à la grille (Y=0 en bas)
+        const cy = (H - 1 - y) * pxPerTile + pxPerTile / 2;
+        const label = `${x},${y}`;
+        ctx.strokeText(label, cx, cy);
+        ctx.fillText(label, cx, cy);
+      }
+    }
+    const tex = new THREE.CanvasTexture(cnv);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    const geo = new THREE.PlaneGeometry(worldW, worldH, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+      side: THREE.DoubleSide,
+    });
+    this.gridLabelsMesh = new THREE.Mesh(geo, mat);
+    this.gridLabelsMesh.position.set(worldW / 2, 0.03, worldH / 2);
+    this.gridLabelsMesh.renderOrder = 0.6; // juste au-dessus du grid
+    this.scene.add(this.gridLabelsMesh);
   }
 
   private buildWater(w: number, h: number): void {
