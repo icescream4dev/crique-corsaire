@@ -722,7 +722,8 @@ export class ThreeRenderer implements IRenderer {
       side: THREE.DoubleSide,
     });
     this.gridMesh = new THREE.Mesh(geo, mat);
-    this.gridMesh.position.set(0, 0.02, 0); // juste au-dessus du fond marin, sous le relief visible
+    // Centré comme le terrain (qui est positionné à (worldW/2, 0, worldH/2)).
+    this.gridMesh.position.set(worldW / 2, 0.02, worldH / 2);
     this.gridMesh.renderOrder = 0.5;
     this.scene.add(this.gridMesh);
   }
