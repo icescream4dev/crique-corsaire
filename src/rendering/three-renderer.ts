@@ -843,8 +843,12 @@ export class ThreeRenderer implements IRenderer {
 
           // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
           
-          // Reflet : projeter le nuage via réflexion miroir (décalé vers la caméra)
-          vec2 reflXZ = vWorldPos.xz + (uCloudHeight / uCameraPos.y) * (vWorldPos.xz - uCameraPos.xz);
+          // Reflet nuages : world-space fixe (pas de re-mapping vers la caméra).
+          // Un re-mapping vers la caméra (uCloudHeight/uCameraPos.y) reproduit un
+          // parallaxe physique de reflet, mais à h/y=70/10=7 il sur-amplifie le glissement
+          // au pan → les reflets "suivent" la caméra au lieu de rester calés sur les nuages
+          // (qui sont fixes en world-space). Comportement voulu : reflet collé au nuage.
+          vec2 reflXZ = vWorldPos.xz;
           float mainShadow = cloudShadow(reflXZ * cloudScale, time * cloudSpeed, 0.71);
           if (mainShadow > 0.01) {
             vec3 hsv = rgb2hsv(color);
