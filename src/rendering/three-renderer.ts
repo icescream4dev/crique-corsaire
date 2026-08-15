@@ -796,21 +796,6 @@ export class ThreeRenderer implements IRenderer {
     }
     this.scene.add(group);
     this.gridLabelsGroup = group;
-
-    // DEBUG TEMPORAIRE : cube rouge massif au centre de la case (70, 22) — pour
-    // diagnostiquer un décalage entre les ghosts et la grille signalée par Julien.
-    // Taille monde 0.4 u (~4 m, plus gros qu'une cellule), couleur rouge vif,
-    // hauteur 2 m, position au centre exact monde de la cellule.
-    {
-      const TS_LOC = 0.5;
-      const debugGeo = new THREE.BoxGeometry(0.4, 2.0, 0.4);
-      const debugMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-      const debugCube = new THREE.Mesh(debugGeo, debugMat);
-      debugCube.position.set((70 + 0.5) * TS_LOC, 1.0, (22 + 0.5) * TS_LOC);
-      debugCube.renderOrder = 3.0;
-      debugCube.name = 'DEBUG_70_22';
-      group.add(debugCube);
-    }
   }
 
   private buildWater(w: number, h: number): void {
