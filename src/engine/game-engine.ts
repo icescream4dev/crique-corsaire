@@ -126,17 +126,18 @@ export class GameEngine {
     const t = tile.terrain;
 
     if (defId === 'port') {
-      // Poteaux sous l'eau : la tuile du ponton doit être en eau peu profonde.
-      if (t !== 'shallow_water') return false;
-      // L'accès (coin haut-gauche du sprite → NO après yaw π/4) doit toucher de la
-      // TERRE FERME. On teste la HAUTEUR LISSÉE > 0 (au-dessus de la surface Y=0),
-      // PAS le type : le sable côtier ('sand', hauteur brute +0.02) est tiré sous 0
-      // par le lissage box blur → la mer le recouvre. Un type non-eau submergé
-      // faisait paraître le ponton posé en pleine mer.
-      for (const [dx, dy] of [[-1,-1],[0,-1],[-1,0]]) {
-        if (this.renderer.getGroundHeight(x + dx, y + dy) > 0) return true;
-      }
-      return false;
+      // Règle géométrique (positions monde du sprite, yaw π/4) :
+      //   - accès (passerelle, coin haut-gauche → SO) : touche le relief — terrain entre
+      //     le deck (waterY) et le haut de la passerelle (rampTop), avec légère tolérance
+      //     d'enfoncement ;
+      //   - deck (centre) : au-dessus du sol (terrain < waterY) ;
+      //   - poteau le plus à droite (NE) : dans l'eau (terrain < 0).
+      const g = this.renderer.getPortPlacementGeometry(x, y);
+      if (!g) return false;
+      const ha = this.renderer.sampleGroundHeight(g.access.x, g.access.z);
+      const hd = this.renderer.sampleGroundHeight(g.deck.x, g.deck.z);
+      const hr = this.renderer.sampleGroundHeight(g.piling.x, g.piling.z);
+      return ha >= g.waterY && ha <= g.rampTop && hd < g.waterY && hr < 0;
     }
     // Par défaut : n'importe quelle tuile terrestre
     return t !== 'deep_water' && t !== 'shallow_water';

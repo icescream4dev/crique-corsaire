@@ -94,6 +94,17 @@ const WORLD_EXTEND = 4;
 // Fraction de la hauteur du sprite immergée sous l'eau (le bas des piliers). La partie
 // immergée est réfractée + absorbée par le water shader (le sprite est déjà dans sceneRT).
 const PORT_IMMERSION = 0.25;
+// Niveau de flottaison du ponton (deck au-dessus de la surface d'eau Y=0). Calibré pour
+// que la ligne d'eau du sprite soit à ~19,5 px au-dessus du bas des pilotis.
+const WATER_Y = 0.0575;
+// Hauteur monde de la passerelle d'accès (coin haut-gauche du sprite) AU-DESSUS du deck.
+// Dérivé du sprite : la passerelle sort au contenu y≈44 px du haut sur 170 px de haut
+// → 0,741·h au-dessus du bas du sprite, dont PORT_IMMERSION·h sous l'eau → 0,49·h au-dessus
+// du deck (waterY). Utilisé par la règle de placement (getPortPlacementGeometry).
+const RAMP_FRACTION = 0.49;
+// Tolérance « s'y enfonce très légèrement » : la passerelle peut s'enfoncer de ~0,2 m
+// (0,01 u) dans le relief avant d'être rejetée.
+const SINK_EPS = 0.01;
 
 export class ThreeRenderer implements IRenderer {
   // Three.js core
@@ -1066,7 +1077,7 @@ export class ThreeRenderer implements IRenderer {
     const tex = this.portTexture!;
     const w = this.portSpriteW || TS; // largeur monde du contenu rogné
     const h = this.portSpriteH || TS; // hauteur monde du contenu rogné
-    const waterY = 0.0575; // niveau de l'eau : flottaison à 19,5px du bas (0.045 + 5px)
+    const waterY = WATER_Y;
     // Absorption Beer-Lambert dans le SPRITE (pas dans l'eau) : la partie immergée
     // s'assombrit vers le noir, jamais vers la couleur de l'eau (sinon turquoise).
     // absorbK dérivé : ~95 % d'atténuation au bas du sprite (immersion réelle =
@@ -1149,8 +1160,44 @@ export class ThreeRenderer implements IRenderer {
 
   // --- Hauteur lissée (pour le placement) ---
 
-  getGroundHeight(x: number, y: number): number {
-    return this.heightGrid[y]?.[x] ?? -1;
+  // Hauteur lissée du terrain au point monde (wx, wz), par interpolation bilinéaire
+  // de la grille de sommets. Renvoie NaN hors carte (les comparaisons → false).
+  sampleGroundHeight(wx: number, wz: number): number {
+    const fx = wx / TS, fz = wz / TS;
+    const x0 = Math.floor(fx), z0 = Math.floor(fz);
+    const tx = fx - x0, tz = fz - z0;
+    // heightGrid[rowZ][colX] = hauteur au sommet (colX·TS, rowZ·TS)
+    const h = (col: number, row: number): number | undefined => this.heightGrid[row]?.[col];
+    const h00 = h(x0, z0), h10 = h(x0 + 1, z0), h01 = h(x0, z0 + 1), h11 = h(x0 + 1, z0 + 1);
+    if (h00 === undefined || h10 === undefined || h01 === undefined || h11 === undefined) return NaN;
+    const top = h00 + (h10 - h00) * tx;
+    const bot = h01 + (h11 - h01) * tx;
+    return top + (bot - top) * tz;
+  }
+
+  // Géométrie monde du ponton pour la règle de placement. La carte verticale (w×h,
+  // yaw π/4) est centrée sur la tuile ; l'image GAUCHE = accès → monde SO, la DROITE =
+  // poteau le plus à droite → NE. Renvoie null si le sprite n'est pas chargé.
+  getPortPlacementGeometry(gridX: number, gridY: number): {
+    access: { x: number; z: number };
+    deck: { x: number; z: number };
+    piling: { x: number; z: number };
+    waterY: number;
+    rampTop: number;
+  } | null {
+    const w = this.portSpriteW || 0;
+    const h = this.portSpriteH || 0;
+    if (!w || !h) return null;
+    const half = w * Math.SQRT2 / 4; // (w/2)·cos(π/4)
+    const cx = (gridX + 0.5) * TS;
+    const cz = (gridY + 0.5) * TS;
+    return {
+      access: { x: cx - half, z: cz + half }, // passerelle (image gauche → SO)
+      deck: { x: cx, z: cz },                 // centre de la tuile
+      piling: { x: cx + half, z: cz - half }, // poteau le plus à droite (image droite → NE)
+      waterY: WATER_Y,
+      rampTop: WATER_Y + h * RAMP_FRACTION + SINK_EPS,
+    };
   }
 
   // --- Surbrillance verte (mode placement) ---
@@ -1173,7 +1220,7 @@ export class ThreeRenderer implements IRenderer {
 
     const w = this.portSpriteW || TS;
     const h = this.portSpriteH || TS;
-    const waterY = 0.0575;
+    const waterY = WATER_Y;
     const yaw = Math.PI / 4;
     const geo = new THREE.PlaneGeometry(w, h);
     // Vert translucide : le sprite entier est teinté vert (surbrillance), sa forme
