@@ -4,8 +4,8 @@
   "category": "housing",
   "description": "Cabane en bois et chaume, tonneaux et drapeau. Un vrai repaire de flibustier.",
   "emoji": "🏴‍☠️",
-  "tileWidth": 2,
-  "tileHeight": 1,
+  "tileWidth": 1,
+  "tileHeight": 2,
   "maxStackHeight": 3,
   "levels": [
     {

@@ -2,8 +2,8 @@
   "id": "hideout",
   "version": 1,
   "render": "model3d",
-  "tile_width": 2,
-  "tile_height": 1,
+  "tile_width": 1,
+  "tile_height": 2,
   "transform": {
     "quaternion_xyzw": [
       0.0,
@@ -11,11 +11,11 @@
       0.0,
       0.73432251
     ],
-    "scale": 0.271396,
+    "scale": 0.317126,
     "offset_xyz": [
-      -0.000413,
-      0.099241,
-      -0.00448
+      -0.000482,
+      0.115963,
+      -0.005235
     ],
     "yaw_deg": 85.5,
     "align_mode": "manual",
