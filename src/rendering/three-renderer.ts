@@ -126,7 +126,7 @@ export class ThreeRenderer implements IRenderer {
   private sceneRT!: THREE.WebGLRenderTarget; // scene pré-rendue pour l'eau
   // Modèles 3D chargés via le registre /assets/registry.json (clé = id bâtiment)
   // + taille d'empreinte en tuiles (pour centrer sur le footprint multi-tuiles)
-  private buildingModels = new Map<string, { group: THREE.Group; tileW: number; tileH: number }>();
+  private buildingModels = new Map<string, { group: THREE.Group; tileW: number; tileH: number; minPlatformHeight: number }>();
   // Surbrillance verte des tuiles valides (mode placement) — port (eau) et sol.
   private groundPreview: THREE.Group | null = null;
   private portPreview: THREE.Group | null = null;
@@ -339,11 +339,12 @@ export class ThreeRenderer implements IRenderer {
             new GLTFLoader().loadAsync(entry.glb),
           ]);
           if (!metaResp.ok) continue;
-          const meta = await metaResp.json() as { transform: BuildingTransformMeta; tile_width?: number; tile_height?: number };
+          const meta = await metaResp.json() as { transform: BuildingTransformMeta; tile_width?: number; tile_height?: number; platform_min_height?: number };
           this.buildingModels.set(id, {
             group: this.prepareGlb(gltf.scene, meta.transform),
             tileW: meta.tile_width ?? 1,
             tileH: meta.tile_height ?? 1,
+            minPlatformHeight: meta.platform_min_height ?? 0.2,
           });
         } catch {
           // bâtiment ignoré : le rendu box de secours prend le relais
@@ -651,14 +652,14 @@ export class ThreeRenderer implements IRenderer {
 
     // --- Fondations RTS (terrain flattening) : aplatir le terrain sous les
     // bâtiments AU SOL. Technique AoE2/SC2/C&C : le terrain se nivelle sous
-    // l'empreinte avec une rampe douce sur les bords. Méthode exacte (Julien) :
-    //   1. hauteur plate = MOYENNE des hauteurs de base des tuiles accueillant
-    //      le bâtiment (terrainHeight nominal, jamais la hauteur lissée du
-    //      centre qui peut être sous l'eau sur une pente plage→eau) ;
-    //   2. les 4 sommets d'angle du footprint (et toute la zone intérieure)
-    //      sont mis EXACTEMENT à cette hauteur → plateforme plane ;
-    //   3. les sommets voisins (marge 1 tuile) sont LISSÉS vers la plateforme
-    //      (mix linéaire) pour une transition douce.
+    // l'empreinte avec une rampe douce sur les bords. Méthode (Julien) :
+    //   1. hauteur plate = MOYENNE des SOMMETS LISSÉS de l'empreinte (pas la
+    //      hauteur nominale du type de terrain — la pente réelle compte) ;
+    //   2. garde-fou : la plateforme ne descend JAMAIS sous minPlatformHeight
+    //      (paramètre par bâtiment, défaut 0.2 = 2 m) → jamais « les pieds
+    //      dans l'eau » même sur un sand côtier tiré sous 0 par le lissage ;
+    //   3. zone plane [gridX..gridX+fw]×[gridY..gridY+fh] à hFlat, rampe
+    //      courte (marge 1 tuile : mi-chemin, d>=2 inchangé).
     for (const row of tiles) {
       for (const tile of row) {
         const b = tile.buildings[0];
@@ -667,29 +668,30 @@ export class ThreeRenderer implements IRenderer {
         const entry = this.buildingModels.get(b.defId);
         const fw = entry?.tileW ?? 1;
         const fh = entry?.tileH ?? 1;
-        // 1. hauteur plate = moyenne des hauteurs de base des tuiles du footprint
-        let sumH = 0;
-        for (let ty = 0; ty < fh; ty++) {
-          for (let tx = 0; tx < fw; tx++) {
-            sumH += this.getHeight(tiles[b.gridY + ty][b.gridX + tx]);
+        const g = (col: number, row: number): number => heightGrid[row]?.[col] ?? 0;
+        // 1. moyenne des sommets lissés de l'empreinte (4 coins + intérieurs)
+        let sumH = 0, nH = 0;
+        for (let gz = b.gridY; gz <= b.gridY + fh; gz++) {
+          for (let gx = b.gridX; gx <= b.gridX + fw; gx++) {
+            sumH += g(gx, gz);
+            nH++;
           }
         }
-        const hFlat = (sumH / (fw * fh)) * HEIGHT_SCALE;
-        const g = (col: number, row: number): number => heightGrid[row]?.[col] ?? 0;
-        // 2+3. zone plane [gridX..gridX+fw]×[gridY..gridY+fh] à hFlat,
-        //        marge 1 tuile : rampe COURTE — les sommets à d=1 sont mélangés
-        //        à mi-chemin (tRamp 0.5) au lieu de retomber sur la hauteur
-        //        d'origine, pour ne pas remonter toute la tuile voisine.
+        // 2. garde-fou : minimum de plateforme (paramètre du bâtiment)
+        const minH = entry?.minPlatformHeight ?? 0.2;
+        const hFlat = Math.max(sumH / nH, minH);
+        // 3. zone plane + rampe courte (marge 1 tuile)
         for (let gz = b.gridY - 1; gz <= b.gridY + fh + 1; gz++) {
           for (let gx = b.gridX - 1; gx <= b.gridX + fw + 1; gx++) {
             if (gz < 0 || gz > H || gx < 0 || gx > W) continue;
+            const orig = g(gx, gz);
             const d = Math.max(
               Math.max(b.gridX - gx, gx - (b.gridX + fw), 0),
               Math.max(b.gridY - gz, gz - (b.gridY + fh), 0),
             );
             // d=0 intérieur → hFlat ; d=1 bord → moitié ; d>=2 → inchangé
             const tRamp = d >= 2 ? 1 : d * 0.5;
-            heightGrid[gz][gx] = hFlat * (1 - tRamp) + g(gx, gz) * tRamp;
+            heightGrid[gz][gx] = hFlat * (1 - tRamp) + orig * tRamp;
           }
         }
       }
