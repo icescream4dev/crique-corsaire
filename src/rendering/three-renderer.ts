@@ -286,12 +286,13 @@ export class ThreeRenderer implements IRenderer {
           && (o.geometry as THREE.BufferGeometry).index!.count === 36) {
           toRemove.push(o);
         } else {
-          // PAS d'ombre projetée physique (castShadow=false) : sur une pente
-          // elle s'étire/déforme, et pour un ponton elle tombe sur le FOND de
-          // l'eau (plus bas que les poteaux) → ombre décalée. Les RTS utilisent
-          // un blob shadow posé à plat sur la surface à la place (voir
-          // renderBuilding) : l'ombre épouse le sol par construction.
-          o.castShadow = false;
+          // Ombre projetée physique active (castShadow=true) : réaliste pour
+          // les bâtiments au sol, qui reposent désormais sur une PLATEFORME
+          // aplatie (fondation) → l'ombre tombe sur du plat, elle colle.
+          // Seul le ponton (pilotis) est exempté, dans renderBuilding : son
+          // ombre physique tomberait sur le FOND de l'eau (plus bas que les
+          // poteaux) → on la remplace par un blob shadow posé sur la surface.
+          o.castShadow = true;
           o.receiveShadow = true;
         }
       }
@@ -644,10 +645,15 @@ export class ThreeRenderer implements IRenderer {
     // des bâtiments (le type 'sand' côtier est tiré sous 0 par le lissage → submergé).
 
     // --- Fondations RTS (terrain flattening) : aplatir le terrain sous les
-    // bâtiments AU SOL. Technique AoE2/SC2/C&C : le terrain se nivelle à la
-    // hauteur du centre de l'empreinte avec une rampe douce d'1 tuile au bord.
-    // Sans ça, un bâtiment rigide posé à une seule hauteur sur une pente flotte
-    // d'un côté et s'enfonce de l'autre → ombre décalée visible.
+    // bâtiments AU SOL. Technique AoE2/SC2/C&C : le terrain se nivelle sous
+    // l'empreinte avec une rampe douce sur les bords. Méthode exacte (Julien) :
+    //   1. hauteur plate = MOYENNE des hauteurs de base des tuiles accueillant
+    //      le bâtiment (terrainHeight nominal, jamais la hauteur lissée du
+    //      centre qui peut être sous l'eau sur une pente plage→eau) ;
+    //   2. les 4 sommets d'angle du footprint (et toute la zone intérieure)
+    //      sont mis EXACTEMENT à cette hauteur → plateforme plane ;
+    //   3. les sommets voisins (marge 1 tuile) sont LISSÉS vers la plateforme
+    //      (mix linéaire) pour une transition douce.
     for (const row of tiles) {
       for (const tile of row) {
         const b = tile.buildings[0];
@@ -656,17 +662,20 @@ export class ThreeRenderer implements IRenderer {
         const entry = this.buildingModels.get(b.defId);
         const fw = entry?.tileW ?? 1;
         const fh = entry?.tileH ?? 1;
-        // hauteur cible = hauteur lissée au centre du footprint
-        const cx = b.gridX + fw / 2;
-        const cz = b.gridY + fh / 2;
-        const x0 = Math.floor(cx), z0 = Math.floor(cz);
-        const tx = cx - x0, tz = cz - z0;
+        // 1. hauteur plate = moyenne des hauteurs de base des tuiles du footprint
+        let sumH = 0;
+        for (let ty = 0; ty < fh; ty++) {
+          for (let tx = 0; tx < fw; tx++) {
+            sumH += this.getHeight(tiles[b.gridY + ty][b.gridX + tx]);
+          }
+        }
+        const hFlat = (sumH / (fw * fh)) * HEIGHT_SCALE;
         const g = (col: number, row: number): number => heightGrid[row]?.[col] ?? 0;
-        const hFlat = (g(x0, z0) * (1 - tx) + g(x0 + 1, z0) * tx) * (1 - tz)
-                    + (g(x0, z0 + 1) * (1 - tx) + g(x0 + 1, z0 + 1) * tx) * tz;
-        // rampe : mix linéaire sur 1 tuile de marge autour de l'empreinte
-        for (let gz = b.gridY; gz <= b.gridY + fh; gz++) {
-          for (let gx = b.gridX; gx <= b.gridX + fw; gx++) {
+        // 2+3. zone plane [gridX..gridX+fw]×[gridY..gridY+fh] à hFlat,
+        //        marge 1 tuile : mix linéaire vers la hauteur d'origine
+        for (let gz = b.gridY - 1; gz <= b.gridY + fh + 1; gz++) {
+          for (let gx = b.gridX - 1; gx <= b.gridX + fw + 1; gx++) {
+            if (gz < 0 || gz > H || gx < 0 || gx > W) continue;
             const d = Math.max(
               Math.max(b.gridX - gx, gx - (b.gridX + fw), 0),
               Math.max(b.gridY - gz, gz - (b.gridY + fh), 0),
@@ -1098,33 +1107,24 @@ export class ThreeRenderer implements IRenderer {
         const fcx = (b.gridX + fw / 2) * TS;
         const fcz = (b.gridY + fh / 2) * TS;
 
-        // --- Blob shadow (ombre en décalque au sol) : technique RTS classique.
-        // Un disque sombre semi-transparent posé À PLAT sur la surface (terrain
-        // lissé pour le sol, surface de l'eau pour le ponton) : il épouse le
-        // sol par construction et ne peut jamais se décaler, même quand le fond
-        // est plus bas que les pilotis (l'ombre projetée physique, elle, tombe
-        // sur le fond lointain → décalage visible).
-        const blobR = (fw > fh ? fw : fh) * TS * 0.62;
-        const blobY = isStilts
-          ? 0.02                                   // surface de l'eau (Y=0) + epsilon
-          : (Number.isFinite(this.sampleGroundHeight(fcx, fcz)) ? this.sampleGroundHeight(fcx, fcz) : 0) + 0.015;
-        const blob = new THREE.Mesh(
-          this.blobShadowGeo(),
-          this.blobShadowMat(),
-        );
-        blob.position.set(fcx, blobY, fcz);
-        blob.scale.setScalar(blobR);
-        blob.renderOrder = 0.5; // sous le bâtiment, au-dessus du terrain
-        blob.userData.sharedBlob = true; // ressources partagées → pas de dispose en clear()
-        this.scene.add(blob);
-
         const inst = modelEntry.group.clone();
         inst.position.x += fcx;
         inst.position.z += fcz;
         if (isStilts) {
           // Sur l'eau (pilotis) : la transform du meta.json pose déjà Y min à
           // −0.049 (base des pilotis sous la surface) → aucun offset vertical.
+          // Ombre : PAS d'ombre projetée physique (elle tomberait sur le FOND
+          // de l'eau, plus bas que les poteaux → décalée) ; à la place un blob
+          // shadow posé sur la SURFACE de l'eau, qui colle par construction.
           inst.position.y += 0.0;
+          inst.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = false; });
+          const blobR = (fw > fh ? fw : fh) * TS * 0.62;
+          const blob = new THREE.Mesh(this.blobShadowGeo(), this.blobShadowMat());
+          blob.position.set(fcx, 0.02, fcz);
+          blob.scale.setScalar(blobR);
+          blob.renderOrder = 0.5; // sous le bâtiment, au-dessus de l'eau
+          blob.userData.sharedBlob = true; // ressources partagées → pas de dispose en clear()
+          this.scene.add(blob);
         } else {
           // Au sol : la transform pose Y min monde = 0 ; on remonte au niveau
           // du terrain (+ léger enfoncement pour ancrer le modèle dans le sol).
@@ -1147,17 +1147,16 @@ export class ThreeRenderer implements IRenderer {
     const groundY = this.sampleGroundHeight(cx, cz);
     const baseY = isStilts ? 0.02 : (Number.isFinite(groundY) ? groundY : 0) + 0.03;
 
-    // --- Blob shadow (ombre décalque) pour le secours aussi ---
-    const blobR = TS * 0.62;
-    const blobY = isStilts
-      ? 0.02
-      : (Number.isFinite(groundY) ? groundY : 0) + 0.015;
-    const blob = new THREE.Mesh(this.blobShadowGeo(), this.blobShadowMat());
-    blob.position.set(cx, blobY, cz);
-    blob.scale.setScalar(blobR);
-    blob.renderOrder = 0.5;
-    blob.userData.sharedBlob = true;
-    this.scene.add(blob);
+    // --- Blob shadow pour le secours PILOTIS (ponton sans modèle) : posé sur
+    // la surface de l'eau, comme le modèle 3D (ombre physique inadaptée). ---
+    if (isStilts) {
+      const blob = new THREE.Mesh(this.blobShadowGeo(), this.blobShadowMat());
+      blob.position.set(cx, 0.02, cz);
+      blob.scale.setScalar(TS * 0.62);
+      blob.renderOrder = 0.5;
+      blob.userData.sharedBlob = true;
+      this.scene.add(blob);
+    }
 
     if (!isStilts) {
       // --- Skirt : monticule de terrain qui remonte contre la base du bâtiment ---
