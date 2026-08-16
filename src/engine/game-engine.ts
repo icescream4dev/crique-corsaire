@@ -132,7 +132,7 @@ export class GameEngine {
           if (this.canPlace(sel, x, y)) pos.push({ x, z: y });
         }
       }
-      this.renderer.setGroundPreview(pos, w, h);
+      this.renderer.setGroundPreview(pos, w, h, sel);
     } else {
       this.renderer.setGroundPreview([], 1, 1);
     }

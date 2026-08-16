@@ -7,9 +7,9 @@
   "transform": {
     "quaternion_xyzw": [
       0.0,
-      0.81360845,
+      0.58141318,
       0.0,
-      -0.58141318
+      0.81360845
     ],
     "scale": 0.544013,
     "scale_xyz": [
@@ -18,18 +18,18 @@
       0.268206
     ],
     "offset_xyz": [
-      0.010131,
+      -0.010131,
       0.21362,
-      -0.001103
+      0.001103
     ],
-    "yaw_deg": 251.1,
+    "yaw_deg": 71.1,
     "fit_error_px": null,
     "silhouette_iou": 0.672,
     "align_mode": "silhouette_iou",
     "deck_normal_world": [
-      -0.2771,
+      0.2771,
       -0.9572,
-      -0.0833
+      0.0833
     ],
     "deck_planarity": 0.1568,
     "deck_horizontal": true,

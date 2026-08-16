@@ -375,30 +375,41 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
     facing_dir = cfg.get('gangplank_direction') or cfg.get('facing_direction')
     if resid is None and anchor == 'stilts':
         yaw_deg = 0.0
-    candidates = [yaw_deg, (yaw_deg + 180) % 360]
-    if facing_dir:
-        wanted = CARDINALS[facing_dir]
-        chosen, best_score = None, -2.0
-        for cand in candidates:
-            R = geo.rot_y(math.radians(cand))
-            Vr = (R @ V0.T).T
-            topdown = np.column_stack([Vr[:, 0], Vr[:, 2]])
-            tc = topdown - topdown.mean(axis=0)
-            cov = tc.T @ tc / len(tc)
-            eigvals, eigvecs = np.linalg.eigh(cov)
-            axis = eigvecs[:, np.argmax(eigvals)]
-            hp = tc @ axis
-            tip = +1 if hp.max() >= -hp.min() else -1
-            pdir = axis * tip
-            score = float(pdir @ wanted)
-            log('align', f'  candidat yaw={cand:.1f}° : direction principale '
-                         f'[{pdir[0]:+.2f},{pdir[1]:+.2f}] · score vs {facing_dir} = {score:+.2f}')
-            if score > best_score:
-                best_score, chosen = score, cand
-        if chosen is not None:
-            yaw_deg = chosen
-        log('align', f'direction {facing_dir} imposée → yaw={yaw_deg:.1f}° '
-                     f'(score {best_score:+.2f})')
+    if anchor == 'ground' and iou is not None and iou >= 0.4:
+        # Bâtiment au sol : l'albedo est le dessin de la FAÇADE vue depuis la
+        # caméra. L'IoU silhouette est donc DÉJÀ le critère avant/arrière — le
+        # meilleur yaw fait face à la caméra. La PCA ne distingue pas façade et
+        # arrière (bug v11.7 : taverne montrée de dos, PCA score +0.55 mais
+        # IoU 0.654 < 0.672) → on ne l'applique qu'en secours si la config ne
+        # demande pas de direction précise.
+        log('align', f'ground : IoU {iou:.3f} >= 0.4 → l\'albedo tranche '
+                     f'l\'avant/arrière, yaw={yaw_deg:.1f}° conservé (façade '
+                     f'face caméra) ; PCA ignorée pour ce bâtiment.')
+    else:
+        candidates = [yaw_deg, (yaw_deg + 180) % 360]
+        if facing_dir:
+            wanted = CARDINALS[facing_dir]
+            chosen, best_score = None, -2.0
+            for cand in candidates:
+                R = geo.rot_y(math.radians(cand))
+                Vr = (R @ V0.T).T
+                topdown = np.column_stack([Vr[:, 0], Vr[:, 2]])
+                tc = topdown - topdown.mean(axis=0)
+                cov = tc.T @ tc / len(tc)
+                eigvals, eigvecs = np.linalg.eigh(cov)
+                axis = eigvecs[:, np.argmax(eigvals)]
+                hp = tc @ axis
+                tip = +1 if hp.max() >= -hp.min() else -1
+                pdir = axis * tip
+                score = float(pdir @ wanted)
+                log('align', f'  candidat yaw={cand:.1f}° : direction principale '
+                             f'[{pdir[0]:+.2f},{pdir[1]:+.2f}] · score vs {facing_dir} = {score:+.2f}')
+                if score > best_score:
+                    best_score, chosen = score, cand
+            if chosen is not None:
+                yaw_deg = chosen
+            log('align', f'direction {facing_dir} imposée → yaw={yaw_deg:.1f}° '
+                         f'(score {best_score:+.2f})')
 
     assert yaw_deg is not None
     theta = math.radians(float(yaw_deg))

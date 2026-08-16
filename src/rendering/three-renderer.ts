@@ -1603,12 +1603,51 @@ export class ThreeRenderer implements IRenderer {
     this.portPreview = group;
   }
 
-  // Surbrillance verte des tuiles valides pour un bâtiment AU SOL à empreinte
-  // w×h. Chaque position est le coin ancre (x, z) du footprint ; on dessine un
-  // quad translucide couvrant les w×h tuiles. (La taverne : w=2, h=1.)
-  setGroundPreview(positions: { x: number; z: number }[], tileW = 1, tileH = 1): void {
+  // Surbrillance des tuiles valides pour un bâtiment AU SOL à empreinte w×h.
+  // Chaque position est le coin ancre (x, z) du footprint. Si le sprite du
+  // bâtiment est chargé (variante sprite ou albedo dispo), on affiche le VRAI
+  // sprite teinté vert (comme le ghost du port) ; sinon un quad vert.
+  setGroundPreview(positions: { x: number; z: number }[], tileW = 1, tileH = 1,
+                   buildingId?: string): void {
     this.clearGroundPreview();
     if (!positions.length) return;
+
+    // Sprite ghost : albedo du bâtiment rogné + teinté vert, même géométrie que
+    // le rendu final (carte verticale face caméra, base au sol).
+    const spr = buildingId ? this.groundSprites.get(buildingId) : undefined;
+    if (spr) {
+      const w = spr.w || TS;
+      const h = spr.h || TS;
+      const yaw = Math.PI / 4;
+      const planeGeo = new THREE.PlaneGeometry(w, h);
+      const ghostMat = new THREE.MeshBasicMaterial({
+        map: spr.albedo,
+        color: 0x37f25c,
+        transparent: true,
+        opacity: 0.6,
+        alphaTest: 0.5,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const group = new THREE.Group();
+      for (const p of positions) {
+        const cx = (p.x + tileW / 2) * TS;
+        const cz = (p.z + tileH / 2) * TS;
+        // hauteur terrain au centre du footprint (le sprite suit le relief)
+        const gy = this.sampleGroundHeight(cx, cz);
+        const m = new THREE.Mesh(planeGeo, ghostMat);
+        m.rotation.y = yaw;
+        m.position.set(cx, (Number.isFinite(gy) ? gy : 0) + h * 0.5 + 0.01, cz);
+        m.renderOrder = 2;
+        group.add(m);
+      }
+      group.renderOrder = 2;
+      this.scene.add(group);
+      this.groundPreview = group;
+      return;
+    }
+
+    // Fallback : quad vert couvrant l'empreinte w×h.
     const geo = new THREE.PlaneGeometry(tileW * TS, tileH * TS);
     const mat = new THREE.MeshBasicMaterial({
       color: 0x37f25c, transparent: true, opacity: 0.35, depthWrite: false,
