@@ -101,17 +101,20 @@ const PORT_IMMERSION = 0.25;
 const WATER_Y = 0.0575;
 
 // Transform EXACTE du modèle 3D pour coïncider avec le sprite validé.
-// Dérivée numériquement par scripts/compute-model-transform.py :
-// - quaternion reproduit l'orientation du bake Blender (yaw 135°/roll −45° =
-//   conversion, équivalent jeu yaw 45°/pitch 30°), det(R) = +1 vérifié ;
-// - scale calée sur la largeur projetée du sprite (0.41 u), hauteur projetée
-//   à −0,1 % de la carte sprite ;
+// Dérivée par scripts/final-model-transform.py (balayage de yaw + appariement
+// des 3 bases de poteaux sur leurs positions écran connues du sprite) :
+// - rotation = PUR YAW de 265,5° autour de +Y. La normale du deck du modèle est
+//   déjà ≈ +Y (modèle droit) ; le deck reste donc PARFAITEMENT HORIZONTAL
+//   [−0.05, 0.999, −0.004]. (Le bug précédent reproduisait le roll caméra du
+//   bake comme rotation du modèle → deck basculé, « passerelle qui touche l'eau ».)
+// - appariement des 3 bases de poteaux : erreur 2,8 px (cibles sprite validé).
+// - scale calée sur la largeur projetée du sprite (0.41 u) ;
 // - offset : centre projeté = centre de la tuile, point le plus bas (base des
 //   poteaux) exactement à Y = −0.04875 (= WATER_Y − 0.25·h du sprite).
 const MODEL_TRANSFORM = {
-  quaternion: new THREE.Quaternion(0.0, 0.78858051, 0.33141357, 0.51798246),
-  scale: 0.19854,
-  offset: new THREE.Vector3(-0.074329, 0.101278, -0.009244),
+  quaternion: new THREE.Quaternion(0.0, 0.73432251, 0.0, -0.67880075), // yaw 265,5°
+  scale: 0.219781,
+  offset: new THREE.Vector3(-0.074679, 0.121611, -0.121773),
 };
 
 export class ThreeRenderer implements IRenderer {
