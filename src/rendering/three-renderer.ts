@@ -344,7 +344,7 @@ export class ThreeRenderer implements IRenderer {
             group: this.prepareGlb(gltf.scene, meta.transform),
             tileW: meta.tile_width ?? 1,
             tileH: meta.tile_height ?? 1,
-            minPlatformHeight: meta.platform_min_height ?? 0.2,
+            minPlatformHeight: meta.platform_min_height ?? 0.02,
           });
         } catch {
           // bâtiment ignoré : le rendu box de secours prend le relais
@@ -678,7 +678,7 @@ export class ThreeRenderer implements IRenderer {
           }
         }
         // 2. garde-fou : minimum de plateforme (paramètre du bâtiment)
-        const minH = entry?.minPlatformHeight ?? 0.2;
+        const minH = entry?.minPlatformHeight ?? 0.02;
         const hFlat = Math.max(sumH / nH, minH);
         // 3. zone plane + rampe courte (marge 1 tuile)
         for (let gz = b.gridY - 1; gz <= b.gridY + fh + 1; gz++) {
