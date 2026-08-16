@@ -591,7 +591,12 @@ export class ThreeRenderer implements IRenderer {
         //   frontière entre 2 types : bord net aligné sur la grille (50/50) ;
         //   coin de 4 types : angle propre (25/25/25/25), diagonale nette (pas d'escalier).
         const n = around.length;
-        if (n > 0) {
+        // DEBUG (Julien) : jaune fluo sur les tuiles portant un bâtiment —
+        // permet de voir exactement quelles tuiles sont occupées.
+        const debugYellow = around.some((t) => t.buildings.length > 0);
+        if (debugYellow) {
+          colorGrid[gy][gx] = [1.0, 0.92, 0.0];
+        } else if (n > 0) {
           let r = 0, g = 0, b = 0;
           for (const t of around) {
             const c = C[t.terrain]!;
@@ -672,7 +677,9 @@ export class ThreeRenderer implements IRenderer {
         const hFlat = (sumH / (fw * fh)) * HEIGHT_SCALE;
         const g = (col: number, row: number): number => heightGrid[row]?.[col] ?? 0;
         // 2+3. zone plane [gridX..gridX+fw]×[gridY..gridY+fh] à hFlat,
-        //        marge 1 tuile : mix linéaire vers la hauteur d'origine
+        //        marge 1 tuile : rampe COURTE — les sommets à d=1 sont mélangés
+        //        à mi-chemin (tRamp 0.5) au lieu de retomber sur la hauteur
+        //        d'origine, pour ne pas remonter toute la tuile voisine.
         for (let gz = b.gridY - 1; gz <= b.gridY + fh + 1; gz++) {
           for (let gx = b.gridX - 1; gx <= b.gridX + fw + 1; gx++) {
             if (gz < 0 || gz > H || gx < 0 || gx > W) continue;
@@ -680,7 +687,8 @@ export class ThreeRenderer implements IRenderer {
               Math.max(b.gridX - gx, gx - (b.gridX + fw), 0),
               Math.max(b.gridY - gz, gz - (b.gridY + fh), 0),
             );
-            const tRamp = Math.min(Math.max(d, 0), 1); // 0 intérieur → 1 bord
+            // d=0 intérieur → hFlat ; d=1 bord → moitié ; d>=2 → inchangé
+            const tRamp = d >= 2 ? 1 : d * 0.5;
             heightGrid[gz][gx] = hFlat * (1 - tRamp) + g(gx, gz) * tRamp;
           }
         }
