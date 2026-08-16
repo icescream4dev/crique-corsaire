@@ -50,18 +50,6 @@ async function main() {
     engine.selectBuilding(next);
     const btn = document.getElementById('btn-port');
     if (btn) btn.style.outline = next === 'port' ? '2px solid #ff0' : 'none';
-    const btnTav = document.getElementById('btn-tavern');
-    if (btnTav && next === 'port') btnTav.style.outline = 'none';
-  });
-
-  // Taverne (empreinte 2×1, au sol)
-  document.getElementById('btn-tavern')?.addEventListener('click', () => {
-    const next = engine.selectedBuilding === 'tavern' ? null : 'tavern';
-    engine.selectBuilding(next);
-    const btn = document.getElementById('btn-tavern');
-    if (btn) btn.style.outline = next === 'tavern' ? '2px solid #ff0' : 'none';
-    const btnPort = document.getElementById('btn-port');
-    if (btnPort && next === 'tavern') btnPort.style.outline = 'none';
   });
 
   // Repaire pirate (empreinte 2×1, au sol)

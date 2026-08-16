@@ -1,4 +1,4 @@
 [
-  { "id": "boucanier", "name": "Boucanier", "emoji": "🥩", "attractedBy": ["tavern"], "produces": ["viande"], "consumes": ["rhum_basique"] },
+  { "id": "boucanier", "name": "Boucanier", "emoji": "🥩", "attractedBy": ["hideout"], "produces": ["viande"], "consumes": ["rhum_basique"] },
   { "id": "marchand", "name": "Marchand", "emoji": "⚖️", "attractedBy": ["port"], "produces": ["pierres"], "consumes": ["rhum_epice"] }
 ]

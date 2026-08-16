@@ -42,7 +42,6 @@ export interface BuildingDef {
 }
 
 export type BuildingCategory =
-  | 'tavern'
   | 'wellness'
   | 'crafting'
   | 'mystic'
