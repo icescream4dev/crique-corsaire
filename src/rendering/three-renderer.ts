@@ -1067,8 +1067,13 @@ export class ThreeRenderer implements IRenderer {
         } else {
           // Au sol : la transform pose Y min monde = 0 ; on remonte au niveau
           // du terrain (+ léger enfoncement pour ancrer le modèle dans le sol).
-          const groundY = this.getHeight(tile) * HEIGHT_SCALE;
-          inst.position.y += groundY + 0.02;
+          // IMPORTANT : utiliser la hauteur LISSÉE au centre du footprint (comme
+          // le ghost vert), pas la hauteur nominale du type de terrain — sinon
+          // sur une pente plage→eau le modèle flotte au-dessus du terrain rendu
+          // (la heightmap est lissée, la hauteur nominale ne l'est pas) et
+          // l'ombre se décale visiblement. Bug v11.x « bâtiment en lévitation ».
+          const groundY = this.sampleGroundHeight(fcx, fcz);
+          inst.position.y += (Number.isFinite(groundY) ? groundY : 0) + 0.02;
         }
         this.scene.add(inst);
       }
@@ -1078,8 +1083,8 @@ export class ThreeRenderer implements IRenderer {
     // --- Secours : pas de modèle 3D → boîte posée ---
     const cx = (b.gridX + 0.5) * TS;
     const cz = (b.gridY + 0.5) * TS;
-    const groundY = this.getHeight(tile) * HEIGHT_SCALE;
-    const baseY = isStilts ? 0.02 : groundY + 0.03;
+    const groundY = this.sampleGroundHeight(cx, cz);
+    const baseY = isStilts ? 0.02 : (Number.isFinite(groundY) ? groundY : 0) + 0.03;
 
     if (!isStilts) {
       // --- Skirt : monticule de terrain qui remonte contre la base du bâtiment ---
