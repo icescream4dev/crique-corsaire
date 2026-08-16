@@ -376,15 +376,39 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
     if resid is None and anchor == 'stilts':
         yaw_deg = 0.0
     if anchor == 'ground' and iou is not None and iou >= 0.4:
-        # Bâtiment au sol : l'albedo est le dessin de la FAÇADE vue depuis la
-        # caméra. L'IoU silhouette est donc DÉJÀ le critère avant/arrière — le
-        # meilleur yaw fait face à la caméra. La PCA ne distingue pas façade et
-        # arrière (bug v11.7 : taverne montrée de dos, PCA score +0.55 mais
-        # IoU 0.654 < 0.672) → on ne l'applique qu'en secours si la config ne
-        # demande pas de direction précise.
-        log('align', f'ground : IoU {iou:.3f} >= 0.4 → l\'albedo tranche '
-                     f'l\'avant/arrière, yaw={yaw_deg:.1f}° conservé (façade '
-                     f'face caméra) ; PCA ignorée pour ce bâtiment.')
+        # Bâtiment aligné sur la grille : vu par la caméra (azimut 45°), il montre
+        # exactement deux murs — nord (+X) et est (+Z), les deux diagonales bas de
+        # l'écran. Le yaw IoU-max met la façade (dessinée de face dans l'albedo)
+        # DANS L'AXE CAMÉRA (vue de coin, incohérente avec le footprint axis-aligned,
+        # bug v11.8 signalé par Julien). On SNappe donc la façade sur une diagonale
+        # visible : ±45° du yaw IoU.
+        #   yaw−45 → façade EST (+Z), côté long le long de X
+        #   yaw+45 → façade NORD (+X), côté long le long de Z
+        # Le choix vient de l'ASPECT du footprint : le côté long du bâtiment (la
+        # façade) doit suivre l'axe long de l'empreinte. 2×1 → façade est ; 1×2 →
+        # façade nord ; carré → le meilleur IoU des deux.
+        # (azimut façade = yaw − 26.1° : à yaw IoU-max la façade pointe la caméra)
+        cand_a = (yaw_deg - 45) % 360   # façade nord (+X)
+        cand_b = (yaw_deg + 45) % 360   # façade est (+Z)
+        tw, th = int(cfg.get('tile_width', 1)), int(cfg.get('tile_height', 1))
+        if tw > th:
+            chosen = cand_b   # côté long le long de X → façade est
+        elif th > tw:
+            chosen = cand_a   # côté long le long de Z → façade nord
+        else:
+            ia, _, _ = geo.silhouette_iou(V0, F, math.radians(cand_a), view,
+                                          right, up_s, a_mask, target_width_u)
+            ib, _, _ = geo.silhouette_iou(V0, F, math.radians(cand_b), view,
+                                          right, up_s, a_mask, target_width_u)
+            chosen = cand_a if ia >= ib else cand_b
+            log('align', f'  footprint carré : IoU nord={ia:.3f} est={ib:.3f}')
+        iou, s_fit, (offx, offy) = geo.silhouette_iou(
+            V0, F, math.radians(chosen), view, right, up_s, a_mask,
+            target_width_u)
+        yaw_deg = chosen
+        log('align', f'façade snapée sur diagonale grille -> yaw={yaw_deg:.1f}° '
+                     f'(façade {"nord" if chosen == cand_a else "est"}, IoU '
+                     f'{iou:.3f}) ; PCA ignorée pour ce bâtiment.')
     else:
         candidates = [yaw_deg, (yaw_deg + 180) % 360]
         if facing_dir:

@@ -37,8 +37,9 @@ Q = np.array([0.0, 0.67880075, 0.0, 0.73432251])
 SCALE = 0.219781
 OFFSET = np.array([-0.142912, 0.121611, -0.095818])
 
-# positions écran des bases de poteaux dans le sprite validé (gauche, central, droit)
-TARGET = np.array([[62, 155], [113, 182], [169, 153]], dtype=float)
+# positions écran des bases de poteaux dans le sprite v1 (gauche, central, droit)
+# — fallback si la détection automatique échoue.
+TARGET_FALLBACK = np.array([[62, 155], [113, 182], [169, 153]], dtype=float)
 
 
 def quat_to_matrix(q):
@@ -82,6 +83,18 @@ for idx in order:
         break
 bases = np.array(bases)
 bases = bases[np.argsort(bases @ right)]
+
+# --- Cibles dessin : détection automatique des bases de poteaux dans l'albedo ---
+# (profil des bas de colonnes, comme geo3d_lib.albedo_base_positions). Si aucun
+# poteau n'est détecté (nouveau dessin), on retombe sur les cibles du sprite v1.
+import geo3d_lib as geo  # noqa: E402  (même répertoire)
+detected, _floor = geo.albedo_base_positions(ALBEDO)
+if len(detected) >= 3:
+    TARGET = detected[:3]
+    print(f'bases détectées dans l\'albedo : {TARGET.tolist()}')
+else:
+    TARGET = TARGET_FALLBACK
+    print(f'aucune base détectée -> cibles v1 : {TARGET.tolist()}')
 
 # --- Warp écran : projection exacte du modèle -> positions albedo ---
 # projection exacte caméra jeu (400 px/u, ancre tile center -> (100, 162.5))

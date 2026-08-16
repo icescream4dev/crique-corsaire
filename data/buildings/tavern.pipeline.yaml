@@ -8,8 +8,8 @@ name: Taverne "Le Rat Qui Louche"
 anchor: ground                    # posée au sol (plage)
 tile_width: 2                     # empreinte grille : 2 tuiles de large
 tile_height: 1
-facing_direction: south           # la façade / le comptoir regarde le SUD (−X),
-                                  # c.-à-d. vers la caméra (comme la passerelle du port)
+# Orientation : le pipeline snape la façade sur une diagonale visible de la
+# grille (2×1 → façade EST), jamais dans l'axe caméra. Voir building-pipeline.py.
 target_polycount: 3000
 variations: 1
 

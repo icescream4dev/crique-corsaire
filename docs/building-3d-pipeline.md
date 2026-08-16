@@ -118,6 +118,24 @@ ENFANT : `world = offset + scale_xyz ⊙ (quat · p)`. C'est indispensable car
 l'échelle est calculée après rotation ; un seul niveau quaternion+scale
 l'appliquerait en espace local et déformerait le modèle par le yaw.
 
+### Orientation de la façade (bâtiments au sol)
+
+La caméra (azimut 45°) montre exactement deux murs d'un bâtiment aligné grille :
+nord (+X) et est (+Z). Le yaw IoU-max mettrait la façade DANS l'axe caméra (vue
+de coin, incohérente) ; on la **snape** donc sur une diagonale visible (±45° du
+yaw IoU), choisie par l'aspect de l'empreinte : 2×1 → façade est, 1×2 → façade
+nord, carré → meilleur IoU des deux. La PCA n'est plus utilisée pour les
+bâtiments ground (elle ne distingue pas façade/arrière et contredit l'IoU).
+
+### Perspective des sprites (règle d'or)
+
+Tous les sprites doivent être générés à **30° au-dessus de l'horizon** (caméra
+basse, plans horizontaux presque de profil) — c'est l'angle exact de la caméra
+jeu (dimétrique 45°/30°, arêtes au sol à ±26,565°). Un sprite « vu de trop haut »
+(ponton v1) casse la cohérence de plan avec les autres bâtiments. Le prompt
+SpriteCook impose cet angle explicitement, et `scripts/analyze-perspective.py`
+mesure la répartition des pentes d'arêtes pour vérifier (pic attendu ≈ ±26,6°).
+
 La **variante sprite** (bascule model3d ↔ sprite) repose sur :
 - `albedo.png` : dessin SpriteCook copié tel quel ;
 - `depth.png` : depth VRAIE rasterisée depuis le modèle orienté

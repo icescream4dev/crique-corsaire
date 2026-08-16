@@ -7,29 +7,29 @@
   "transform": {
     "quaternion_xyzw": [
       0.0,
-      0.58141318,
+      0.84851021,
       0.0,
-      0.81360845
+      0.529179
     ],
-    "scale": 0.544013,
+    "scale": 0.576756,
     "scale_xyz": [
-      0.544013,
+      0.576756,
       0.585799,
-      0.268206
+      0.242472
     ],
     "offset_xyz": [
-      -0.010131,
+      0.010253,
       0.21362,
-      0.001103
+      0.007668
     ],
-    "yaw_deg": 71.1,
+    "yaw_deg": 116.1,
     "fit_error_px": null,
-    "silhouette_iou": 0.672,
+    "silhouette_iou": 0.555,
     "align_mode": "silhouette_iou",
     "deck_normal_world": [
-      0.2771,
+      0.2548,
       -0.9572,
-      0.0833
+      -0.137
     ],
     "deck_planarity": 0.1568,
     "deck_horizontal": true,
