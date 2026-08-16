@@ -290,13 +290,15 @@ export class ThreeRenderer implements IRenderer {
 
   // Charge (ou recharge) l'albedo + la depth map du ponton selon la variante active.
   //   spritecook : albedo SpriteCook + depth procédurale (bake-ponton-depth.py)
-  //   blender    : albedo Blender + depth Blender brute (décalée de +7 px — voir audit)
-  //   hybrid     : albedo SpriteCook + depth 3D recalée sur les pilotis SpriteCook
-  //                (realign-depth.py → ponton-blender-depth-aligned.png)
+  //   blender    : albedo Blender + depth Blender brute (obsolète, bake caméra roll −45°)
+  //   hybrid     : albedo SpriteCook + VRAIE géométrie : z-buffer du modèle 3D
+  //                orienté (yaw 85.5°) rasterisé sous la caméra du jeu
+  //                (bake-true-depth.py → ponton-true-depth.png), alignée sur
+  //                l'albedo à 0,7-1,2 px aux bases des poteaux.
   private async loadPortSprites(): Promise<void> {
     const albedo = this.portVariant === 'blender' ? '/ponton-blender.png' : '/ponton-pirate.png';
     const depth = this.portVariant === 'blender' ? '/ponton-blender-depth.png'
-      : this.portVariant === 'hybrid' ? '/ponton-blender-depth-aligned.png'
+      : this.portVariant === 'hybrid' ? '/ponton-true-depth.png'
       : '/ponton-pirate-depth.png';
     try {
       const tex = await this.textureLoader.loadAsync(albedo);
