@@ -677,10 +677,16 @@ export class ThreeRenderer implements IRenderer {
             nH++;
           }
         }
+        const meanH = sumH / nH;
         // 2. garde-fou : minimum de plateforme (paramètre du bâtiment)
         const minH = entry?.minPlatformHeight ?? 0.02;
-        const hFlat = Math.max(sumH / nH, minH);
-        // 3. zone plane + rampe courte (marge 1 tuile)
+        const hFlat = Math.max(meanH, minH);
+        // 3. zone plane + rampe courte (marge 1 tuile).
+        //    Astuce Julien : la plateforme n'est PAS parfaitement horizontale —
+        //    elle conserve 1 % de la pente d'origine des sommets (dans le même
+        //    sens), pour que la transition avec le terrain environnant soit
+        //    douce au lieu d'un plateau net qui tranche.
+        const SLOPE = 0.01;
         for (let gz = b.gridY - 1; gz <= b.gridY + fh + 1; gz++) {
           for (let gx = b.gridX - 1; gx <= b.gridX + fw + 1; gx++) {
             if (gz < 0 || gz > H || gx < 0 || gx > W) continue;
@@ -689,9 +695,10 @@ export class ThreeRenderer implements IRenderer {
               Math.max(b.gridX - gx, gx - (b.gridX + fw), 0),
               Math.max(b.gridY - gz, gz - (b.gridY + fh), 0),
             );
-            // d=0 intérieur → hFlat ; d=1 bord → moitié ; d>=2 → inchangé
             const tRamp = d >= 2 ? 1 : d * 0.5;
-            heightGrid[gz][gx] = hFlat * (1 - tRamp) + orig * tRamp;
+            // plateforme inclinée au point : hFlat + 1% de l'écart à la moyenne
+            const target = hFlat + SLOPE * (orig - meanH);
+            heightGrid[gz][gx] = target * (1 - tRamp) + orig * tRamp;
           }
         }
       }

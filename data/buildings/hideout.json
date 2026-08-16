@@ -7,7 +7,7 @@
   "tileWidth": 1,
   "tileHeight": 2,
   "maxStackHeight": 3,
-  "platformMinHeight": 0.02,
+  "platformMinHeight": 0.03,
   "levels": [
     {
       "level": 1,
