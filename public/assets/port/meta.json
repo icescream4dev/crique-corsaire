@@ -4,6 +4,7 @@
   "render": "model3d",
   "tile_width": 1,
   "tile_height": 1,
+  "platform_min_height": -0.05,
   "transform": {
     "quaternion_xyzw": [
       0.0,

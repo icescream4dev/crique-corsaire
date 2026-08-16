@@ -651,19 +651,22 @@ export class ThreeRenderer implements IRenderer {
     // des bâtiments (le type 'sand' côtier est tiré sous 0 par le lissage → submergé).
 
     // --- Fondations RTS (terrain flattening) : aplatir le terrain sous les
-    // bâtiments AU SOL. Technique AoE2/SC2/C&C : le terrain se nivelle sous
+    // bâtiments. Technique AoE2/SC2/C&C : le terrain se nivelle sous
     // l'empreinte avec une rampe douce sur les bords. Méthode (Julien) :
     //   1. hauteur plate = MOYENNE des SOMMETS LISSÉS de l'empreinte (pas la
     //      hauteur nominale du type de terrain — la pente réelle compte) ;
     //   2. garde-fou : la plateforme ne descend JAMAIS sous minPlatformHeight
-    //      (paramètre par bâtiment, défaut 0.2 = 2 m) → jamais « les pieds
-    //      dans l'eau » même sur un sand côtier tiré sous 0 par le lissage ;
+    //      (paramètre par bâtiment : repaire 0.03 = 0,3 m, port −0.05 =
+    //      bas des poteaux) → jamais « les pieds dans l'eau » ni poteaux
+    //      suspendus au-dessus d'un fond trop profond ;
     //   3. zone plane [gridX..gridX+fw]×[gridY..gridY+fh] à hFlat, rampe
-    //      courte (marge 1 tuile : mi-chemin, d>=2 inchangé).
+    //      courte (marge 1 tuile : mi-chemin, d>=2 inchangé), et la plateforme
+    //      conserve 1 % de la pente d'origine (astuce Julien) pour une
+    //      transition douce.
     for (const row of tiles) {
       for (const tile of row) {
         const b = tile.buildings[0];
-        if (!b || b.anchor === 'stilts') continue;      // pilotis = pas de fondation
+        if (!b) continue;
         if (tile.x !== b.gridX || tile.y !== b.gridY) continue; // tuile ancre
         const entry = this.buildingModels.get(b.defId);
         const fw = entry?.tileW ?? 1;
@@ -1130,18 +1133,10 @@ export class ThreeRenderer implements IRenderer {
         if (isStilts) {
           // Sur l'eau (pilotis) : la transform du meta.json pose déjà Y min à
           // −0.049 (base des pilotis sous la surface) → aucun offset vertical.
-          // Ombre : PAS d'ombre projetée physique (elle tomberait sur le FOND
-          // de l'eau, plus bas que les poteaux → décalée) ; à la place un blob
-          // shadow posé sur la SURFACE de l'eau, qui colle par construction.
+          // Ombre physique réaliste CONSERVÉE : la plateforme de fondation
+          // sous le ponton remonte le fond au niveau des poteaux (min
+          // −0.05) → l'ombre projetée tombe sur la plateforme, elle colle.
           inst.position.y += 0.0;
-          inst.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = false; });
-          const blobR = (fw > fh ? fw : fh) * TS * 0.62;
-          const blob = new THREE.Mesh(this.blobShadowGeo(), this.blobShadowMat());
-          blob.position.set(fcx, 0.02, fcz);
-          blob.scale.setScalar(blobR);
-          blob.renderOrder = 0.5; // sous le bâtiment, au-dessus de l'eau
-          blob.userData.sharedBlob = true; // ressources partagées → pas de dispose en clear()
-          this.scene.add(blob);
         } else {
           // Au sol : la transform pose Y min monde = 0 ; on remonte au niveau
           // du terrain (+ léger enfoncement pour ancrer le modèle dans le sol).
@@ -1163,17 +1158,6 @@ export class ThreeRenderer implements IRenderer {
     const cz = (b.gridY + 0.5) * TS;
     const groundY = this.sampleGroundHeight(cx, cz);
     const baseY = isStilts ? 0.02 : (Number.isFinite(groundY) ? groundY : 0) + 0.03;
-
-    // --- Blob shadow pour le secours PILOTIS (ponton sans modèle) : posé sur
-    // la surface de l'eau, comme le modèle 3D (ombre physique inadaptée). ---
-    if (isStilts) {
-      const blob = new THREE.Mesh(this.blobShadowGeo(), this.blobShadowMat());
-      blob.position.set(cx, 0.02, cz);
-      blob.scale.setScalar(TS * 0.62);
-      blob.renderOrder = 0.5;
-      blob.userData.sharedBlob = true;
-      this.scene.add(blob);
-    }
 
     if (!isStilts) {
       // --- Skirt : monticule de terrain qui remonte contre la base du bâtiment ---
@@ -1256,38 +1240,6 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(this.groundPreview);
   }
 
-  // Blob shadow — géométrie + matériau partagés (créés paresseusement).
-  private blobGeo: THREE.CircleGeometry | null = null;
-  private blobMat: THREE.MeshBasicMaterial | null = null;
-
-  private blobShadowGeo(): THREE.CircleGeometry {
-    if (!this.blobGeo) {
-      this.blobGeo = new THREE.CircleGeometry(1, 24);
-      this.blobGeo.rotateX(-Math.PI / 2); // à plat (plan horizontal)
-    }
-    return this.blobGeo;
-  }
-
-  private blobShadowMat(): THREE.MeshBasicMaterial {
-    if (!this.blobMat) {
-      // Dégradé radial doux : noir au centre → transparent au bord (classique RTS)
-      const c = document.createElement('canvas');
-      c.width = c.height = 128;
-      const ctx = c.getContext('2d')!;
-      const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
-      grad.addColorStop(0, 'rgba(0,0,0,0.55)');
-      grad.addColorStop(0.55, 'rgba(0,0,0,0.30)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 128, 128);
-      const tex = new THREE.CanvasTexture(c);
-      this.blobMat = new THREE.MeshBasicMaterial({
-        map: tex, transparent: true, depthWrite: false,
-      });
-    }
-    return this.blobMat;
-  }
-
   // Ghost 3D teinté vert : un clone du modèle par position valide.
   // liftY : renvoie la hauteur du sol (null = laisser la transform du meta).
   private buildGhostPreview(entry: { group: THREE.Group; tileW: number; tileH: number },
@@ -1358,11 +1310,6 @@ export class ThreeRenderer implements IRenderer {
       if (obj instanceof THREE.Mesh) toRemove.push(obj);
     });
     for (const m of toRemove) {
-      // Les blobs partagent géométrie + matériau statiques → les retirer sans dispose.
-      if (m.userData.sharedBlob) {
-        m.parent?.remove(m);
-        continue;
-      }
       m.geometry.dispose();
       const mats = Array.isArray(m.material) ? m.material : [m.material];
       for (const mt of mats) mt.dispose();
