@@ -123,6 +123,8 @@ const MODEL_TRANSFORM = {
 interface BuildingTransformMeta {
   quaternion_xyzw: [number, number, number, number];
   scale: number;
+  /** Échelle par axe (bâtiments au sol multi-tuiles) ; absente = uniforme. */
+  scale_xyz?: [number, number, number];
   offset_xyz: [number, number, number];
 }
 
@@ -157,6 +159,14 @@ export class ThreeRenderer implements IRenderer {
   // Modèles 3D chargés via le registre /assets/registry.json (clé = id bâtiment)
   // + taille d'empreinte en tuiles (pour centrer sur le footprint multi-tuiles)
   private buildingModels = new Map<string, { group: THREE.Group; tileW: number; tileH: number }>();
+  // Variante sprite des bâtiments au sol (comme le port) : albedo + depth vraie.
+  // Chargé depuis /assets/<id>/albedo.png + /assets/<id>/depth.png.
+  private groundSprites = new Map<string, {
+    albedo: THREE.Texture; depth: THREE.Texture | null;
+    w: number; h: number;  // taille monde du contenu rogné
+  }>();
+  // Bascule de rendu des bâtiments au sol : model3d (défaut) ↔ sprite.
+  private groundVariant: 'model3d' | 'sprite' = 'model3d';
   // Surbrillance verte des tuiles valides pour un bâtiment au sol (multi-tuiles)
   private groundPreview: THREE.Group | null = null;
   // Source du rendu (cycle A/B/C/D) :
@@ -364,6 +374,15 @@ export class ThreeRenderer implements IRenderer {
   // Nettoie une scène GLB (cube parasite Meshy, ombres) et applique une
   // transform du pipeline : normalise le centre de bbox à l'origine puis
   // quaternion / scale / offset du meta.json. Retourne le Group prêt à poser.
+  //
+  // Deux modes :
+  //  - uniforme (pas de scale_xyz) : Group(offset) · quat · scale. C'est le cas
+  //    historique du ponton. scale scalaire commute avec la rotation.
+  //  - anisotrope (scale_xyz) : bâtiments au sol multi-tuiles. L'échelle est
+  //    calculée dans le pipeline sur les axes MONDE (après rotation), donc on la
+  //    pose sur un nœud PARENT (axes monde) et le quaternion sur un nœud ENFANT :
+  //    world = offset + scale_xyz ⊙ (quat · p). Un seul niveau quaternion+scale
+  //    appliquerait l'échelle en espace local (avant rotation) → déformé par le yaw.
   private prepareGlb(scene: THREE.Object3D, t: BuildingTransformMeta): THREE.Group {
     const toRemove: THREE.Object3D[] = [];
     scene.traverse((o) => {
@@ -382,6 +401,21 @@ export class ThreeRenderer implements IRenderer {
     const box = new THREE.Box3().setFromObject(scene);
     const center = box.getCenter(new THREE.Vector3());
     scene.position.sub(center);
+
+    if (t.scale_xyz) {
+      // Hiérarchie : offset → scale (monde) → rotation → modèle centré
+      const rotNode = new THREE.Group();
+      rotNode.quaternion.fromArray(t.quaternion_xyzw);
+      rotNode.add(scene);
+      const scaleNode = new THREE.Group();
+      scaleNode.scale.fromArray(t.scale_xyz);
+      scaleNode.add(rotNode);
+      const grp = new THREE.Group();
+      grp.position.fromArray(t.offset_xyz);
+      grp.add(scaleNode);
+      return grp;
+    }
+
     const grp = new THREE.Group();
     grp.add(scene);
     grp.quaternion.fromArray(t.quaternion_xyzw);
@@ -411,6 +445,9 @@ export class ThreeRenderer implements IRenderer {
             tileW: meta.tile_width ?? 1,
             tileH: meta.tile_height ?? 1,
           });
+          // Variante sprite : albedo + depth vraie (bake-building-depth.py).
+          // Optionnel : si absent, seule la variante model3d est disponible.
+          await this.loadGroundSprite(id, meta.tile_height ?? 1);
         } catch {
           // bâtiment ignoré : le rendu box/sprite prend le relais
         }
@@ -418,6 +455,69 @@ export class ThreeRenderer implements IRenderer {
     } catch {
       // pas de registre : rien à faire
     }
+  }
+
+  // Charge albedo.png + depth.png d'un bâtiment au sol pour la variante sprite.
+  // Taille monde dérivée du canvas : un canvas de (tileH·200) px de haut vaut
+  // tileH tuiles = tileH·TS unités (convention 200 px/tuile). La largeur suit
+  // la même échelle px/u (canvas 400×200 pour une empreinte 2×1).
+  private async loadGroundSprite(id: string, tileH: number): Promise<void> {
+    try {
+      const albedo = await this.textureLoader.loadAsync(`/assets/${id}/albedo.png`);
+      albedo.colorSpace = THREE.SRGBColorSpace;
+      albedo.magFilter = THREE.NearestFilter;
+      albedo.minFilter = THREE.NearestFilter;
+      let depth: THREE.Texture | null = null;
+      try {
+        depth = await this.textureLoader.loadAsync(`/assets/${id}/depth.png`);
+        depth.colorSpace = THREE.NoColorSpace;
+        depth.magFilter = THREE.NearestFilter;
+        depth.minFilter = THREE.NearestFilter;
+      } catch { depth = null; }
+
+      // Crop des marges transparentes + bbox pour aligner la depth sur l'albedo.
+      const img = albedo.image as HTMLImageElement;
+      const ih = img.naturalHeight || img.height;
+      const scale = (tileH * TS) / ih; // px -> unité monde
+      const bbox = this.findContentBBox(img);
+      const cropped = this.cropToBbox(img, bbox);
+      const cw = bbox.maxX - bbox.minX + 1;
+      const ch = bbox.maxY - bbox.minY + 1;
+      let croppedDepth: THREE.Texture | null = null;
+      if (depth) {
+        croppedDepth = this.cropToBbox(depth.image as HTMLImageElement, bbox, THREE.NoColorSpace);
+      }
+      this.groundSprites.set(id, {
+        albedo: cropped, depth: croppedDepth,
+        w: cw * scale, h: ch * scale,
+      });
+    } catch {
+      // pas de sprite : la variante model3d reste seule disponible
+    }
+  }
+
+  // Bbox du contenu non transparent d'une image (comme cropTransparent du port).
+  private findContentBBox(img: HTMLImageElement): { minX: number; minY: number; maxX: number; maxY: number } {
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    const cnv = document.createElement('canvas');
+    cnv.width = iw; cnv.height = ih;
+    const ctx = cnv.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, iw, ih).data;
+    let minX = iw, minY = ih, maxX = -1, maxY = -1;
+    for (let y = 0; y < ih; y++) {
+      for (let x = 0; x < iw; x++) {
+        if (data[(y * iw + x) * 4 + 3] > 16) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return { minX: 0, minY: 0, maxX: iw - 1, maxY: ih - 1 };
+    return { minX, minY, maxX, maxY };
   }
 
   // Cycle spritecook → blender → hybrid → model3d → spritecook.
@@ -428,6 +528,12 @@ export class ThreeRenderer implements IRenderer {
     this.portVariant = next;
     await this.loadPortSprites();
     return this.portVariant;
+  }
+
+  // Bascule model3d ↔ sprite pour les bâtiments AU SOL (comme la bascule du port).
+  async toggleGroundVariant(): Promise<'model3d' | 'sprite'> {
+    this.groundVariant = this.groundVariant === 'model3d' ? 'sprite' : 'model3d';
+    return this.groundVariant;
   }
 
   onReady(fn: () => void) { this.onAssetsLoaded = fn; }
@@ -1143,6 +1249,21 @@ export class ThreeRenderer implements IRenderer {
     }
 
     if (!isStilts) {
+      // Variante sprite (bascule model3d ↔ sprite) : dessin SpriteCook + depth
+      // vraie rasterisée. Rendu depuis la tuile ANCRE, centré sur le footprint.
+      if (this.groundVariant === 'sprite') {
+        const spr = this.groundSprites.get(b.defId);
+        if (spr && tile.x === b.gridX && tile.y === b.gridY) {
+          const fw = this.buildingModels.get(b.defId)?.tileW ?? 1;
+          const fh = this.buildingModels.get(b.defId)?.tileH ?? 1;
+          const fcx = (b.gridX + fw / 2) * TS;
+          const fcz = (b.gridY + fh / 2) * TS;
+          this.renderGroundSprite(spr, fcx, fcz, groundY);
+          return;
+        }
+        if (spr) return; // sprite déjà dessiné depuis la tuile ancre
+      }
+
       // Modèle 3D du registre (pipeline scripts/building-pipeline.py) : rendu
       // direct si disponible. Le modèle n'est dessiné QU'UNE FOIS depuis la
       // tuile ANCRE (b.gridX, b.gridY = coin du footprint) et centré sur
@@ -1252,6 +1373,72 @@ export class ThreeRenderer implements IRenderer {
   }
 
   // --- Sprite ponton (port) : carte verticale immergée + ombre de contact ---
+
+  // --- Sprite au sol (variante sprite des bâtiments ground) ---
+  // Carte verticale face caméra (yaw π/4 constant), ancrée au sol : la BASE du
+  // sprite rogné est posée exactement au niveau du terrain. La depth map vraie
+  // (rasterisée depuis le modèle 3D orienté) décale chaque pixel dans le
+  // z-buffer (Pixel Depth Offset) → occlusion correcte avec le terrain et les
+  // autres objets. Pas d'absorption (pas d'eau) ; pas de socle (le sprite est
+  // opaque jusqu'à la base).
+  private renderGroundSprite(spr: { albedo: THREE.Texture; depth: THREE.Texture | null; w: number; h: number },
+                             cx: number, cz: number, groundY: number): void {
+    const w = spr.w || TS;
+    const h = spr.h || TS;
+    const yaw = Math.PI / 4;
+
+    // Ombre portée douce sur le sol (ancre visuellement le sprite)
+    const shadowGeo = new THREE.CircleGeometry(Math.max(w, h) * 0.30, 20);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.18, depthWrite: false,
+    });
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(cx, groundY + 0.005, cz);
+    shadow.renderOrder = 2;
+    this.scene.add(shadow);
+
+    const geo = new THREE.PlaneGeometry(w, h);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: spr.albedo },
+        uDepthMap: { value: spr.depth },
+        uDepthRange: { value: 1.0 },
+        uNear: { value: this.camera.near },
+        uFar: { value: this.camera.far },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform sampler2D uMap;
+        uniform sampler2D uDepthMap;
+        uniform float uDepthRange;
+        uniform float uNear;
+        uniform float uFar;
+        void main() {
+          vec4 tex = texture2D(uMap, vUv);
+          if (tex.a < 0.5) discard;
+          float d = texture2D(uDepthMap, vUv).r;
+          float offset = (d - 0.5) * uDepthRange;
+          gl_FragDepth = gl_FragCoord.z - offset / (uFar - uNear);
+          gl_FragColor = tex;
+        }`,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: true,
+    });
+    const sprite = new THREE.Mesh(geo, mat);
+    sprite.rotation.y = yaw;
+    // base au niveau du sol : centre = groundY + h/2 (léger enfoncement anti-flicker)
+    sprite.position.set(cx, groundY + h * 0.5 + 0.01, cz);
+    sprite.renderOrder = 2;
+    this.scene.add(sprite);
+  }
 
   private renderPortSprite(cx: number, cz: number): void {
     // Variante model3d : le VRAI modèle 3D. Sa profondeur est RÉELLE (z-buffer),

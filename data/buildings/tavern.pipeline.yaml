@@ -1,5 +1,7 @@
 # Config pipeline — Taverne niveau 1 (rudimentaire). Consommé par
 # scripts/building-pipeline.py. Empreinte : 2 tuiles de large (2×1).
+# v2 (2026-08-16) : direction artistique Monkey Island réécrite — bâtiment
+# LONG et BAS pour remplir l'empreinte 2:1 (la v1 quasi carrée débordait).
 
 id: tavern
 name: Taverne "Le Rat Qui Louche"
@@ -11,23 +13,30 @@ facing_direction: south           # la façade / le comptoir regarde le SUD (−
 target_polycount: 3000
 variations: 1
 
-# Description visuelle pour SpriteCook — bâtiment large et bas (2 tuiles),
-# niveau 1 = rudimentaire : comptoir de plage + paillote, pas encore de vraie
-# taverne en dur. L'angle dimétrique exact est injecté automatiquement.
+# Description visuelle pour SpriteCook — style Monkey Island : bar de plage
+# rudimentaire, loufoque, truffé de détails pirates. Le bâtiment doit être
+# nettement plus LARGE que profond (~2:1) pour remplir l'empreinte 2×1.
 sprite_description: >-
-  Wide rustic beach bar and rudimentary pirate tavern shack, level 1: a long
-  wooden counter/bar made of driftwood planks under a thatched palm-leaf roof,
-  a few barrels and a hanging lantern, weathered sun-bleached wood, warm
-  sunlight, small footprint, single wide asset centered, viewed from a
-  three-quarter quarter-view so the bar front faces the viewer.
+  Wide ramshackle beach-bar tavern, level 1, in the cartoon style of classic
+  Monkey Island games, full of goofy pirate humor: a LONG low shack (twice as
+  wide as it is deep) built from weathered driftwood planks and salvaged ship
+  parts, a wide open front counter facing the viewer, sagging thatched
+  palm-leaf roof, a crooked hanging wooden sign painted with a skull and
+  crossed cutlasses, rum barrels stacked beside the counter, coiled ropes and
+  a fishing net draped on a post, a green parrot perched on the roof edge,
+  two tiki torches, a tiny chalkboard menu with a doodled fish, a half-buried
+  anchor in the sand, warm late-afternoon Caribbean sunlight, saturated
+  palette, chunky 16-bit pixel art with bold dark outlines and dithering.
+  The building spans the full width of the canvas, single centered asset.
 
 art_direction:
   style: hand-drawn pixel art
-  theme: pirates caribbean sunny island beach
+  theme: monkey island pirate comedy caribbean beach
   style_label: 16-bit SNES style
 
 meshy_texture_prompt: >-
-  weathered driftwood planks, thatched palm roof, warm sunlight, beach bar,
-  toon shading
+  weathered driftwood planks, salvaged ship wood, thatched palm roof, skull
+  sign, rum barrels, warm sunset light, toon shading, monkey island cartoon
+  style
 
 style_reference_asset_id: null

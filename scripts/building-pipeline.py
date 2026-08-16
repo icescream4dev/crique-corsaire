@@ -331,6 +331,10 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
                      f'Le sprite ne remplit peut-être pas son canvas.')
 
     # --- rotation : balayage de yaw ---
+    # Empreinte monde (largeur, profondeur) : le modèle au sol ne doit JAMAIS
+    # déborder de son rectangle de grille (sinon superposition visuelle des
+    # bâtiments voisins — bug v11.6 : taverne 69 % trop profonde).
+    footprint_u = (tile_width * TS, tile_height * TS)
     iou = None
     if len(base_pos) >= 3 and anchor == 'stilts':
         # appariement des bases de poteaux (cas ponton)
@@ -412,7 +416,29 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
 
     # --- scale + translation ---
     px_all = Vr @ right
-    scale = target_width_u / (px_all.max() - px_all.min())
+    # Échelle par axe. Pour le ponton (pilotis, 1×1) on reste UNIFORME : on cale
+    # la largeur projetée écran sur le sprite. Pour un bâtiment AU SOL multi-tuiles,
+    # le modèle Meshy a souvent un plan quasi carré alors que l'empreinte est 2:1 →
+    # on applique une échelle ANISOTROPE qui remplit le rectangle d'empreinte
+    # (largeur = fw, profondeur = fd) et cale la hauteur sur le sprite.
+    scale_xyz = None
+    if anchor == 'ground':
+        ex = Vr[:, 0].max() - Vr[:, 0].min()
+        ey = Vr[:, 1].max() - Vr[:, 1].min()
+        ez = Vr[:, 2].max() - Vr[:, 2].min()
+        fw, fd = footprint_u
+        sx = fw / ex if ex > 1e-9 else 1.0        # remplit la largeur (2 tuiles)
+        sz = fd / ez if ez > 1e-9 else 1.0        # tient la profondeur (1 tuile)
+        # hauteur : on veut que l'extent Y monde projeté ≈ hauteur carte du sprite.
+        # Une hauteur monde Y se projette verticalement avec facteur cos(pitch).
+        target_height_u = h_u / math.cos(geo.PITCH)
+        sy = target_height_u / ey if ey > 1e-9 else sx
+        scale_xyz = np.array([sx, sy, sz])
+        scale = float(sx)   # champ scalaire conservé (réf = axe X)
+        log('align', f'échelle anisotrope : sx={sx:.4f} sy={sy:.4f} sz={sz:.4f} '
+                     f'(empreinte {fw:.2f} × {fd:.2f} u, hauteur cible {target_height_u:.3f} u)')
+    else:
+        scale = target_width_u / (px_all.max() - px_all.min())
     log('align', f'scale = {scale:.6f} (largeur projetée -> {target_width_u:.3f} u)')
 
     if anchor == 'stilts':
@@ -421,7 +447,12 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
     else:
         y_base = 0.0
         card_center_y = 0.5 * h_u
-    Vs = Vr * scale
+    # Échelle anisotrope (ground) ou uniforme (stilts). scale_xyz est soit un
+    # vecteur (sx, sy, sz) soit None → dans ce cas on applique le scalaire.
+    if scale_xyz is not None:
+        Vs = Vr * scale_xyz
+    else:
+        Vs = Vr * scale
     if anchor == 'ground':
         # Convention ground : le renderer pose le groupe au CENTRE du footprint,
         # au niveau du terrain. Le meta doit donc mettre le centre de la bbox XZ
@@ -449,6 +480,9 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
     return {
         'quaternion_xyzw': [round(float(v), 8) for v in q],
         'scale': round(float(scale), 6),
+        # Échelle par axe (bâtiments au sol multi-tuiles) ; absente = uniforme.
+        **({'scale_xyz': [round(float(v), 6) for v in scale_xyz]}
+           if scale_xyz is not None else {}),
         'offset_xyz': [round(float(v), 6) for v in t],
         'yaw_deg': round(float(yaw_deg), 2),
         'fit_error_px': round(float(resid), 2) if resid is not None else None,
@@ -477,6 +511,11 @@ def write_artifacts(cfg, glb_path, transform, provenance):
     import shutil
     dst_glb = os.path.join(out_dir, 'model.glb')
     shutil.copy(glb_path, dst_glb)
+
+    # Albedo SpriteCook : servi tel quel pour la variante sprite du bâtiment.
+    src_albedo = provenance.get('albedo')
+    if src_albedo and os.path.exists(src_albedo):
+        shutil.copy(src_albedo, os.path.join(out_dir, 'albedo.png'))
 
     meta = {
         'id': building_id,
@@ -536,17 +575,26 @@ def cmd_build(args):
         if not os.path.exists(glb):
             sys.exit(f'GLB introuvable : {glb}')
         log('build', f'reprise : GLB existant {glb} (Meshy sauté)')
-    elif not args.albedo or not os.path.exists(glb):
-        # génère le modèle 3D sauf si le GLB attendu existe déjà (reprise partielle)
-        if os.path.exists(glb):
+    else:
+        # Fraîcheur du cache : un GLB plus ancien que l'albedo correspond à un
+        # dessin périmé (bug v11.6 : Meshy sauté alors que l'albedo avait été
+        # régénéré) → on régénère le modèle depuis le nouveau dessin.
+        stale = (os.path.exists(glb)
+                 and os.path.getmtime(albedo) > os.path.getmtime(glb))
+        if os.path.exists(glb) and not stale:
             log('build', f'reprise : GLB existant {glb} (Meshy sauté)')
         else:
+            if stale:
+                backup = f'{glb}.stale'
+                os.replace(glb, backup)
+                log('build', f'GLB périmé (albedo régénéré après) : déplacé vers {backup}')
             task_id = meshy_image_to_3d(cfg, albedo, env, glb)
             provenance['meshy_task_id'] = task_id
 
     transform = align_model(cfg, albedo, glb, ASSETS_DIR)
     provenance.update({'albedo': albedo, 'glb_source': glb})
     write_artifacts(cfg, glb, transform, provenance)
+    bake_depth(cfg['id'], albedo)
     log('DONE', f'bâtiment {args.id} prêt pour intégration')
 
 
@@ -555,7 +603,22 @@ def cmd_align(args):
     transform = align_model(cfg, args.albedo, args.glb, ASSETS_DIR)
     write_artifacts(cfg, args.glb, transform,
                     {'albedo': args.albedo, 'glb_source': args.glb, 'mode': 'local'})
+    bake_depth(args.id, args.albedo)
     log('DONE', f'alignement {args.id} terminé')
+
+
+def bake_depth(building_id, albedo_path):
+    """Rasterise la depth VRAIE du modèle orienté sur le canvas de l'albedo
+    (variante sprite du bâtiment). Local, sans crédits."""
+    import subprocess
+    script = os.path.join(ROOT, 'scripts', 'bake-building-depth.py')
+    out = subprocess.run(
+        [sys.executable, script, building_id, albedo_path],
+        capture_output=True, text=True, timeout=300)
+    if out.returncode != 0:
+        log('depth', f'⚠ bake depth échoué (non bloquant) : {out.stderr[-300:]}')
+    else:
+        log('depth', f'depth.png -> public/assets/{building_id}/depth.png')
 
 
 def cmd_check(args):

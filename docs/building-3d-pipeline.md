@@ -101,6 +101,36 @@ python3 scripts/building-pipeline.py check --id port
 Le ponton de référence : yaw 85.5°, fit 2.79 px, deck normal [0.05, 0.999, 0.004],
 passerelle sud (score +0.98). Reproduit automatiquement par `align`.
 
+## Bâtiments au sol multi-tuiles (échelle anisotrope)
+
+Un bâtiment `anchor: ground` sur une empreinte w×h (ex. taverne 2×1) ne peut pas
+utiliser l'échelle uniforme du ponton : le plan du modèle Meshy est souvent quasi
+carré alors que l'empreinte est 2:1. Le pipeline applique donc une **échelle
+anisotrope par axe** qui remplit exactement le rectangle d'empreinte :
+
+- `sx = fw / ex`  → remplit la largeur (fw = tile_width·TS)
+- `sz = fd / ez`  → tient la profondeur (fd = tile_height·TS)
+- `sy = target_height / ey` → cale la hauteur sur le sprite (target = h_u / cos(pitch))
+
+Le meta porte alors `scale_xyz` (au lieu du seul `scale`). Le renderer applique
+cette échelle sur un nœud PARENT en **axes monde**, le quaternion sur un nœud
+ENFANT : `world = offset + scale_xyz ⊙ (quat · p)`. C'est indispensable car
+l'échelle est calculée après rotation ; un seul niveau quaternion+scale
+l'appliquerait en espace local et déformerait le modèle par le yaw.
+
+La **variante sprite** (bascule model3d ↔ sprite) repose sur :
+- `albedo.png` : dessin SpriteCook copié tel quel ;
+- `depth.png` : depth VRAIE rasterisée depuis le modèle orienté
+  (`scripts/bake-building-depth.py`), alignée sur le canvas de l'albedo par
+  translation des centres de bbox, trous internes remplis en nearest.
+  Convention identique au shader du port : `offset = (d − 0.5) · uDepthRange`,
+  d encodé relatif au plan vertical passant par le centre du footprint.
+
+Le renderer charge ces deux textures (`loadGroundSprite`) et, en variante sprite,
+dessine une carte verticale face caméra (yaw π/4) ancrée au sol, avec Pixel
+Depth Offset pour l'occlusion. Voir `toggleGroundVariant()` /
+`renderGroundSprite()` dans `three-renderer.ts`.
+
 ## Format meta.json
 
 ```json

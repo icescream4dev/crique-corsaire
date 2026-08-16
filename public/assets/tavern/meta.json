@@ -7,37 +7,42 @@
   "transform": {
     "quaternion_xyzw": [
       0.0,
-      0.81764762,
+      0.81360845,
       0.0,
-      -0.575719
+      -0.58141318
     ],
-    "scale": 0.408936,
+    "scale": 0.544013,
+    "scale_xyz": [
+      0.544013,
+      0.585799,
+      0.268206
+    ],
     "offset_xyz": [
-      0.003843,
-      0.108437,
-      -0.020324
+      0.010131,
+      0.21362,
+      -0.001103
     ],
-    "yaw_deg": 250.3,
+    "yaw_deg": 251.1,
     "fit_error_px": null,
-    "silhouette_iou": 0.727,
+    "silhouette_iou": 0.672,
     "align_mode": "silhouette_iou",
     "deck_normal_world": [
-      -0.0038,
-      1.0,
-      0.0002
+      -0.2771,
+      -0.9572,
+      -0.0833
     ],
-    "deck_planarity": 0.1932,
+    "deck_planarity": 0.1568,
     "deck_horizontal": true,
-    "faces": 2673,
-    "verts": 3491,
-    "content_width_u": 0.8675,
-    "card_height_u": 0.3325,
+    "faces": 2737,
+    "verts": 3633,
+    "content_width_u": 0.925,
+    "card_height_u": 0.37,
     "anchor": "ground"
   },
   "provenance": {
-    "config": "data/buildings/tavern.pipeline.yaml",
     "albedo": "cache/tavern-spritecook.png",
-    "glb_source": "cache/tavern.glb"
+    "glb_source": "cache/tavern.glb",
+    "mode": "local"
   },
   "conventions": {
     "projection": "orthographic 45°/30°, 400 px/u, canvas 200 px",

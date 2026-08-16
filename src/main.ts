@@ -74,6 +74,14 @@ async function main() {
       : '🎨 Sprite : SpriteCook';
     engine.buildWorld(); // re-rendre avec la nouvelle texture
   });
+
+  // Bascule Modèle 3D ↔ Sprite pour les bâtiments AU SOL (taverne...)
+  document.getElementById('btn-ground-variant')?.addEventListener('click', async () => {
+    const v = await renderer.toggleGroundVariant();
+    const btn = document.getElementById('btn-ground-variant');
+    if (btn) btn.textContent = v === 'sprite' ? '🍺 Rendu : Sprite' : '🍺 Rendu : Modèle 3D';
+    engine.buildWorld();
+  });
 }
 
 main().catch(console.error);
