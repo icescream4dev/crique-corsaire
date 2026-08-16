@@ -1,0 +1,20 @@
+{
+  "id": "hideout",
+  "name": "Repaire pirate",
+  "category": "housing",
+  "description": "Cabane en bois et chaume, tonneaux et drapeau. Un vrai repaire de flibustier.",
+  "emoji": "🏴‍☠️",
+  "tileWidth": 2,
+  "tileHeight": 1,
+  "maxStackHeight": 3,
+  "levels": [
+    {
+      "level": 1,
+      "displayName": "Abri de fortune",
+      "inputs": {},
+      "outputs": {},
+      "buildCost": { "pierres": 3, "bois_flotte": 2 },
+      "buildTime": 10
+    }
+  ]
+}

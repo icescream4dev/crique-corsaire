@@ -63,6 +63,14 @@ async function main() {
     const btnPort = document.getElementById('btn-port');
     if (btnPort && next === 'tavern') btnPort.style.outline = 'none';
   });
+
+  // Repaire pirate (empreinte 2×1, au sol)
+  document.getElementById('btn-hideout')?.addEventListener('click', () => {
+    const next = engine.selectedBuilding === 'hideout' ? null : 'hideout';
+    engine.selectBuilding(next);
+    const btn = document.getElementById('btn-hideout');
+    if (btn) btn.style.outline = next === 'hideout' ? '2px solid #ff0' : 'none';
+  });
 }
 
 main().catch(console.error);

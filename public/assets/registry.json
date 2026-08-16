@@ -6,5 +6,9 @@
   "tavern": {
     "glb": "/assets/tavern/model.glb",
     "meta": "/assets/tavern/meta.json"
+  },
+  "hideout": {
+    "glb": "/assets/hideout/model.glb",
+    "meta": "/assets/hideout/meta.json"
   }
 }

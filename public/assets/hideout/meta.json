@@ -1,0 +1,31 @@
+{
+  "id": "hideout",
+  "version": 1,
+  "render": "model3d",
+  "tile_width": 2,
+  "tile_height": 1,
+  "transform": {
+    "quaternion_xyzw": [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    "scale": 0.338886,
+    "offset_xyz": [
+      -0.0,
+      0.12392,
+      -0.0
+    ],
+    "yaw_deg": 180.0,
+    "align_mode": "manual",
+    "anchor": "ground",
+    "faces": 9032,
+    "verts": 10127,
+    "bbox_model_u": [
+      1.888,
+      0.731,
+      1.475
+    ]
+  }
+}
