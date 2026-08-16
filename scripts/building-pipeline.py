@@ -54,6 +54,14 @@ TS = 0.5                 # une tuile = 0.5 unité monde
 FILL = 0.82              # remplissage standard du canvas (164/200)
 WATER_Y = 0.0575         # niveau de flottaison (voir three-renderer.ts)
 
+# Rotation UNIVERSELLE d'alignement sur la grille (validée Julien 2026-08-16) :
+# tous les meshs générés par Meshy ont une orientation de base qui, tournée de
+# 85,5° autour de l'axe Y (vertical), s'aligne avec la grille du jeu (caméra
+# dimétrique 45°/30°). Validée à la fois sur le ponton (appariement poteaux →
+# yaw 85,5°) et sur le hideout (visuel, rendu Blender avec axes). C'est LA
+# règle générale : plus d'heuristique IoU-silhouette qui ratait l'avant/arrière.
+GRID_YAW_DEG = 85.5
+
 # directions cardinales monde (Sud = −X, convention projet)
 CARDINALS = {
     'north': np.array([+1.0, 0.0]),   # +X
@@ -354,91 +362,48 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
         mode_align = 'bases_poteaux'
         log('align', f'appariement bases : yaw={yaw_deg:.1f}° résidu={resid:.2f} px')
     elif anchor == 'ground':
-        # bâtiment au sol : pas de poteaux → orientation par IoU de silhouette
-        # (le modèle, généré depuis l'albedo, doit recouvrir au mieux le sprite)
-        iou, yaw_deg, s_fit, (offx, offy) = geo.fit_silhouette(
-            V0, F, a_mask, target_width_u, view, right, up_s, step=2.0)
+        # Règle générale (validée Julien 2026-08-16) : tous les meshs Meshy
+        # s'alignent sur la grille par une rotation de 85,5° autour de Y.
+        # Plus d'IoU-silhouette (ratée : silhouette symétrique avant/arrière) ni
+        # de snap ±45°. Le ponton (appariement poteaux) avait déjà trouvé 85,5°.
+        yaw_deg = GRID_YAW_DEG
         resid = None
-        mode_align = 'silhouette_iou'
-        log('align', f'IoU silhouette : yaw={yaw_deg:.1f}° iou={iou:.3f} '
-                     f'offset recenter ({offx:+.1f}, {offy:+.1f}) px')
-        if iou < 0.4:
-            log('align', '⚠ IoU faible (<0.4) : le modèle ne ressemble pas au '
-                         'sprite sous cet angle — vérifier à la main avant intégration.')
+        mode_align = 'grid_yaw'
+        log('align', f'règle grille : yaw={yaw_deg}° (rotation universelle Meshy)')
     else:
         yaw_deg = 0.0
         resid, s_fit, perm = None, None, None
         mode_align = 'bbox'
         log('align', 'pas de poteaux détectés → alignement par bbox')
 
-    # --- levée d'ambiguïté avant/arrière par direction de la passerelle/façade ---
+    # --- levée d'ambiguïté avant/arrière par direction de la passerelle (stilts) ---
     facing_dir = cfg.get('gangplank_direction') or cfg.get('facing_direction')
     if resid is None and anchor == 'stilts':
         yaw_deg = 0.0
-    if anchor == 'ground' and iou is not None and iou >= 0.4:
-        # Bâtiment aligné sur la grille : vu par la caméra (azimut 45°), il montre
-        # exactement deux murs — nord (+X) et est (+Z). Le yaw IoU-max met la
-        # façade dans l'axe caméra ; on la snape sur une diagonale visible selon
-        # l'aspect de l'empreinte (2×1 → est, 1×2 → nord). Puis on lève
-        # l'ambiguïté AVANT/ARRIÈRE par corrélation couleur avec l'albedo
-        # SpriteCook (la référence façade) — la silhouette seule ne distingue
-        # pas le dos du devant (symétrie), d'où le bug v11.8 « l'arrière visible ».
-        cand_a = (yaw_deg - 45) % 360   # façade nord (+X)
-        cand_b = (yaw_deg + 45) % 360   # façade est (+Z)
-        tw, th = int(cfg.get('tile_width', 1)), int(cfg.get('tile_height', 1))
-        if tw > th:
-            chosen = cand_b   # côté long le long de X → façade est
-        elif th > tw:
-            chosen = cand_a   # côté long le long de Z → façade nord
-        else:
-            ia, _, _ = geo.silhouette_iou(V0, F, math.radians(cand_a), view,
-                                          right, up_s, a_mask, target_width_u)
-            ib, _, _ = geo.silhouette_iou(V0, F, math.radians(cand_b), view,
-                                          right, up_s, a_mask, target_width_u)
-            chosen = cand_a if ia >= ib else cand_b
-            log('align', f'  footprint carré : IoU nord={ia:.3f} est={ib:.3f}')
-        # --- avant/arrière : corrélation couleur vs albedo (général) ---
-        try:
-            _, _, uv_arr, tex = geo.textured_mesh(glb_path)
-            flip = (chosen + 180) % 360
-            facade, scores = geo.facade_front_yaw(
-                V0, F, uv_arr, tex, alb, view, right, up_s, chosen, flip)
-            log('align', f'  façade/dos : Pearson couleur yaw {chosen:.1f}° = '
-                         f'{scores[chosen]:+.3f} vs {flip:.1f}° = {scores[flip]:+.3f} '
-                         f'-> {facade:.1f}°')
-            chosen = facade
-        except RuntimeError as e:
-            log('align', f'  ⚠ pas de texture → avant/arrière non vérifié ({e})')
-        iou, s_fit, (offx, offy) = geo.silhouette_iou(
-            V0, F, math.radians(chosen), view, right, up_s, a_mask,
-            target_width_u)
-        yaw_deg = chosen
-        log('align', f'façade orientée -> yaw={yaw_deg:.1f}° (IoU {iou:.3f})')
-    else:
+    if facing_dir:
         candidates = [yaw_deg, (yaw_deg + 180) % 360]
-        if facing_dir:
-            wanted = CARDINALS[facing_dir]
-            chosen, best_score = None, -2.0
-            for cand in candidates:
-                R = geo.rot_y(math.radians(cand))
-                Vr = (R @ V0.T).T
-                topdown = np.column_stack([Vr[:, 0], Vr[:, 2]])
-                tc = topdown - topdown.mean(axis=0)
-                cov = tc.T @ tc / len(tc)
-                eigvals, eigvecs = np.linalg.eigh(cov)
-                axis = eigvecs[:, np.argmax(eigvals)]
-                hp = tc @ axis
-                tip = +1 if hp.max() >= -hp.min() else -1
-                pdir = axis * tip
-                score = float(pdir @ wanted)
-                log('align', f'  candidat yaw={cand:.1f}° : direction principale '
-                             f'[{pdir[0]:+.2f},{pdir[1]:+.2f}] · score vs {facing_dir} = {score:+.2f}')
-                if score > best_score:
-                    best_score, chosen = score, cand
-            if chosen is not None:
-                yaw_deg = chosen
-            log('align', f'direction {facing_dir} imposée → yaw={yaw_deg:.1f}° '
-                         f'(score {best_score:+.2f})')
+        wanted = CARDINALS[facing_dir]
+        chosen, best_score = None, -2.0
+        for cand in candidates:
+            R = geo.rot_y(math.radians(cand))
+            Vr = (R @ V0.T).T
+            topdown = np.column_stack([Vr[:, 0], Vr[:, 2]])
+            tc = topdown - topdown.mean(axis=0)
+            cov = tc.T @ tc / len(tc)
+            eigvals, eigvecs = np.linalg.eigh(cov)
+            axis = eigvecs[:, np.argmax(eigvals)]
+            hp = tc @ axis
+            tip = +1 if hp.max() >= -hp.min() else -1
+            pdir = axis * tip
+            score = float(pdir @ wanted)
+            log('align', f'  candidat yaw={cand:.1f}° : direction principale '
+                         f'[{pdir[0]:+.2f},{pdir[1]:+.2f}] · score vs {facing_dir} = {score:+.2f}')
+            if score > best_score:
+                best_score, chosen = score, cand
+        if chosen is not None:
+            yaw_deg = chosen
+        log('align', f'direction {facing_dir} imposée → yaw={yaw_deg:.1f}° '
+                     f'(score {best_score:+.2f})')
 
     assert yaw_deg is not None
     theta = math.radians(float(yaw_deg))
