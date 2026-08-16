@@ -4,7 +4,7 @@
   "category": "tavern",
   "description": "Rhum frelaté et racontars de marins.",
   "emoji": "🍺",
-  "tileWidth": 1,
+  "tileWidth": 2,
   "tileHeight": 1,
   "maxStackHeight": 3,
   "levels": [

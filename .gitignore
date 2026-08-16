@@ -10,3 +10,6 @@ public/assets/*/model.glb
 
 # Scripts obsolètes conservés pour historique (non exécutés par le pipeline)
 scripts/archive/
+
+# Cache de build du pipeline (albedo/GLB sources, non distribués)
+cache/

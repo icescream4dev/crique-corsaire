@@ -21,6 +21,7 @@ export interface IRenderer {
   sampleGroundHeight(wx: number, wz: number): number;
   /** Affiche / retire la surbrillance verte du ponton sur les tuiles données (mode placement). */
   setPortPreview(positions: { x: number; z: number }[]): void;
+  setGroundPreview(positions: { x: number; z: number }[], tileW?: number, tileH?: number): void;
 }
 
 /** Abstraction de la persistence (sauvegarde/chargement). */

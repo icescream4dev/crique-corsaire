@@ -1,0 +1,33 @@
+# Config pipeline — Taverne niveau 1 (rudimentaire). Consommé par
+# scripts/building-pipeline.py. Empreinte : 2 tuiles de large (2×1).
+
+id: tavern
+name: Taverne "Le Rat Qui Louche"
+anchor: ground                    # posée au sol (plage)
+tile_width: 2                     # empreinte grille : 2 tuiles de large
+tile_height: 1
+facing_direction: south           # la façade / le comptoir regarde le SUD (−X),
+                                  # c.-à-d. vers la caméra (comme la passerelle du port)
+target_polycount: 3000
+variations: 1
+
+# Description visuelle pour SpriteCook — bâtiment large et bas (2 tuiles),
+# niveau 1 = rudimentaire : comptoir de plage + paillote, pas encore de vraie
+# taverne en dur. L'angle dimétrique exact est injecté automatiquement.
+sprite_description: >-
+  Wide rustic beach bar and rudimentary pirate tavern shack, level 1: a long
+  wooden counter/bar made of driftwood planks under a thatched palm-leaf roof,
+  a few barrels and a hanging lantern, weathered sun-bleached wood, warm
+  sunlight, small footprint, single wide asset centered, viewed from a
+  three-quarter quarter-view so the bar front faces the viewer.
+
+art_direction:
+  style: hand-drawn pixel art
+  theme: pirates caribbean sunny island beach
+  style_label: 16-bit SNES style
+
+meshy_texture_prompt: >-
+  weathered driftwood planks, thatched palm roof, warm sunlight, beach bar,
+  toon shading
+
+style_reference_asset_id: null

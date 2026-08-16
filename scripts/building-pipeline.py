@@ -25,7 +25,8 @@ Usage :
       --albedo public/ponton-pirate.png --glb /opt/data/cache/ponton_3k.glb
   python3 scripts/building-pipeline.py check  --id port   # re-vérifie le meta
 
-Dépendances : numpy, Pillow, trimesh (uv run --with trimesh --with numpy).
+Dépendances : numpy, Pillow, trimesh, scipy, pyyaml, networkx
+  (uv run --with trimesh --with scipy --with numpy --with pyyaml --with networkx --with pillow)
 Clés : SPRITECOOK_API_KEY et MESHY_API_KEY dans /opt/data/.env.
 """
 import argparse
@@ -136,14 +137,19 @@ def spritecook_generate(cfg, env, cache_path):
         f"{art.get('style', 'hand-drawn pixel art')}. "
         f"Single building asset, centered, transparent background."
     )
+    # Canvas : 200 px par tuile (convention projet, 400 px/u). Un bâtiment 2×1
+    # est demandé sur 400×200. (width/height peuvent être ignorés par le modèle
+    # → le pipeline d'alignement mesure le canvas réel et s'adapte.)
+    tw = int(cfg.get('tile_width', 1))
+    th = int(cfg.get('tile_height', 1))
     args = {
         'prompt': prompt,
-        'width': 200, 'height': 200,
+        'width': 200 * tw, 'height': 200 * th,
         'pixel': True,
         'bg_mode': 'transparent',
         'mode': 'assets',
         'variations': cfg.get('variations', 1),
-        'smart_crop': True,
+        'smart_crop': False,   # garder le canvas demandé (l'alignement s'y cale)
     }
     if art.get('theme'):
         args['theme'] = art['theme']
@@ -159,15 +165,22 @@ def spritecook_generate(cfg, env, cache_path):
     text = _extract_mcp_text(result)
     log('spritecook', f'réponse brute (tronquée) : {text[:500]}')
 
-    # Extraire asset_id + URL ; sinon re-fetch via list_recent_assets
+    # Extraire asset_id + URL ; sinon re-fetch via list_recent_assets.
+    # Format observé (2026-08-16) : {"job_id":..., "status":"succeeded",
+    #   "credits_used":12, "assets":[{"id":..., "url":..., "pixel_url":...}]}
     asset_id, url = None, None
     try:
         data = json.loads(text) if text.strip().startswith('{') else None
     except Exception:
         data = None
     if isinstance(data, dict):
-        asset_id = data.get('asset_id') or data.get('id')
-        url = data.get('url') or data.get('image_url') or data.get('content_url')
+        assets = data.get('assets') or []
+        if assets:
+            asset_id = assets[0].get('id')
+            url = assets[0].get('url') or assets[0].get('pixel_url')
+        if not url:
+            asset_id = data.get('asset_id') or data.get('id')
+            url = data.get('url') or data.get('image_url') or data.get('content_url')
     if not url:
         time.sleep(3)
         rec = spritecook_call('list_recent_assets', {'limit': 5}, api_key)
@@ -250,7 +263,7 @@ def meshy_image_to_3d(cfg, albedo_path, env, glb_path):
     log('meshy', f'task_id = {task_id} — attente génération (~2-5 min)...')
     status = meshy_call(env, 'meshy_get_task_status',
                         {'task_id': task_id, 'task_type': 'image-to-3d',
-                         'wait': True, 'timeout_seconds': 600,
+                         'wait': True, 'timeout_seconds': 300,
                          'response_format': 'json'})
     log('meshy', f'status : {str(status)[:300]}')
     dl = meshy_call(env, 'meshy_download_model',
@@ -298,14 +311,27 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
     from PIL import Image
     alb = np.array(Image.open(albedo_path).convert('RGBA'))
     a_mask = alb[:, :, 3] > geo.ALPHA_THRESH
+    canvas_h_px = alb.shape[0]                    # hauteur réelle du canvas albedo
     ys_a, xs_a = np.where(a_mask)
     content_w_px = xs_a.max() - xs_a.min() + 1
-    target_width_u = content_w_px * TS / geo.CANVAS   # taille monde du contenu
-    h_u = (ys_a.max() - ys_a.min() + 1) * TS / geo.CANVAS
+    # Échelle monde : 1 tuile = 0.5 u. Un sprite occupe tile_width tuiles de
+    # large ; la convention de remplissage reste « contenu px / canvas px ».
+    # Le contenu de l'albedo fait foi pour la largeur monde du modèle.
+    tile_width = int(cfg.get('tile_width', 1))
+    tile_height = int(cfg.get('tile_height', 1))
+    px_per_u_canvas = canvas_h_px / (tile_height * TS)  # px par unité monde sur ce canvas
+    target_width_u = content_w_px / px_per_u_canvas
+    h_u = (ys_a.max() - ys_a.min() + 1) / px_per_u_canvas
+    expected_w = tile_width * TS * 0.82
     log('align', f'albedo : contenu {content_w_px} px -> {target_width_u:.3f} u '
                  f'(hauteur carte {h_u:.3f} u), floor={floor}')
+    if abs(target_width_u - expected_w) > 0.25 * expected_w:
+        log('align', f'⚠ largeur contenu {target_width_u:.2f} u très différente de '
+                     f'l\'empreinte {tile_width} tuiles (~{expected_w:.2f} u). '
+                     f'Le sprite ne remplit peut-être pas son canvas.')
 
     # --- rotation : balayage de yaw ---
+    iou = None
     if len(base_pos) >= 3 and anchor == 'stilts':
         # appariement des bases de poteaux (cas ponton)
         bases_m, bases_idx = geo.lowest_distinct_points(V0, n=len(base_pos))
@@ -323,19 +349,31 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
                 resid, yaw_deg, s_fit, perm = b2
         mode_align = 'bases_poteaux'
         log('align', f'appariement bases : yaw={yaw_deg:.1f}° résidu={resid:.2f} px')
+    elif anchor == 'ground':
+        # bâtiment au sol : pas de poteaux → orientation par IoU de silhouette
+        # (le modèle, généré depuis l'albedo, doit recouvrir au mieux le sprite)
+        iou, yaw_deg, s_fit, (offx, offy) = geo.fit_silhouette(
+            V0, F, a_mask, target_width_u, view, right, up_s, step=2.0)
+        resid = None
+        mode_align = 'silhouette_iou'
+        log('align', f'IoU silhouette : yaw={yaw_deg:.1f}° iou={iou:.3f} '
+                     f'offset recenter ({offx:+.1f}, {offy:+.1f}) px')
+        if iou < 0.4:
+            log('align', '⚠ IoU faible (<0.4) : le modèle ne ressemble pas au '
+                         'sprite sous cet angle — vérifier à la main avant intégration.')
     else:
-        # fallback : pas de poteaux → on cale le bbox projeté sur le contenu albedo
         yaw_deg = 0.0
         resid, s_fit, perm = None, None, None
         mode_align = 'bbox'
         log('align', 'pas de poteaux détectés → alignement par bbox')
 
-    # --- levée d'ambiguïté avant/arrière par direction de la passerelle ---
-    if resid is None:
+    # --- levée d'ambiguïté avant/arrière par direction de la passerelle/façade ---
+    facing_dir = cfg.get('gangplank_direction') or cfg.get('facing_direction')
+    if resid is None and anchor == 'stilts':
         yaw_deg = 0.0
     candidates = [yaw_deg, (yaw_deg + 180) % 360]
-    if resid is not None and gangplank_dir:
-        wanted = CARDINALS[gangplank_dir]
+    if facing_dir:
+        wanted = CARDINALS[facing_dir]
         chosen, best_score = None, -2.0
         for cand in candidates:
             R = geo.rot_y(math.radians(cand))
@@ -349,13 +387,13 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
             tip = +1 if hp.max() >= -hp.min() else -1
             pdir = axis * tip
             score = float(pdir @ wanted)
-            log('align', f'  candidat yaw={cand:.1f}° : direction passerelle '
-                         f'[{pdir[0]:+.2f},{pdir[1]:+.2f}] · score vs {gangplank_dir} = {score:+.2f}')
+            log('align', f'  candidat yaw={cand:.1f}° : direction principale '
+                         f'[{pdir[0]:+.2f},{pdir[1]:+.2f}] · score vs {facing_dir} = {score:+.2f}')
             if score > best_score:
                 best_score, chosen = score, cand
         if chosen is not None:
             yaw_deg = chosen
-        log('align', f'direction {gangplank_dir} imposée → yaw={yaw_deg:.1f}° '
+        log('align', f'direction {facing_dir} imposée → yaw={yaw_deg:.1f}° '
                      f'(score {best_score:+.2f})')
 
     assert yaw_deg is not None
@@ -382,15 +420,25 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
         card_center_y = WATER_Y + 0.25 * h_u
     else:
         y_base = 0.0
-        card_center_y = 0.25 * h_u
+        card_center_y = 0.5 * h_u
     Vs = Vr * scale
-    tgt_x = np.dot([0, card_center_y, 0], right)
-    tgt_y = np.dot([0, card_center_y, 0], up_s)
-    A = np.array([right, up_s, [0, 1, 0]])
-    bvec = np.array([tgt_x - px_all.mean() * scale,
-                     tgt_y - (Vr @ up_s).mean() * scale,
-                     y_base - Vs[:, 1].min()])
-    t = np.linalg.solve(A, bvec)
+    if anchor == 'ground':
+        # Convention ground : le renderer pose le groupe au CENTRE du footprint,
+        # au niveau du terrain. Le meta doit donc mettre le centre de la bbox XZ
+        # du modèle à l'origine (offset horizontal) et Y min à 0.
+        minx, maxx = Vs[:, 0].min(), Vs[:, 0].max()
+        minz, maxz = Vs[:, 2].min(), Vs[:, 2].max()
+        t = np.array([-(minx + maxx) / 2, -Vs[:, 1].min(), -(minz + maxz) / 2])
+        log('align', f'ground : centre bbox XZ -> origine, Y min -> 0 '
+                     f'(bbox monde {maxx - minx:.3f} × {maxz - minz:.3f} u)')
+    else:
+        tgt_x = np.dot([0, card_center_y, 0], right)
+        tgt_y = np.dot([0, card_center_y, 0], up_s)
+        A = np.array([right, up_s, [0, 1, 0]])
+        bvec = np.array([tgt_x - px_all.mean() * scale,
+                         tgt_y - (Vr @ up_s).mean() * scale,
+                         y_base - Vs[:, 1].min()])
+        t = np.linalg.solve(A, bvec)
     Vf = Vs + t
     log('align', f'Y min monde = {Vf[:, 1].min():.5f} (cible {y_base:.5f})')
 
@@ -404,6 +452,7 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
         'offset_xyz': [round(float(v), 6) for v in t],
         'yaw_deg': round(float(yaw_deg), 2),
         'fit_error_px': round(float(resid), 2) if resid is not None else None,
+        'silhouette_iou': round(float(iou), 3) if iou is not None else None,
         'align_mode': mode_align,
         'deck_normal_world': [round(float(v), 4) for v in n_deck_r],
         'deck_planarity': round(float(flat), 4),
@@ -433,6 +482,8 @@ def write_artifacts(cfg, glb_path, transform, provenance):
         'id': building_id,
         'version': 1,
         'render': 'model3d',
+        'tile_width': int(cfg.get('tile_width', 1)),
+        'tile_height': int(cfg.get('tile_height', 1)),
         'transform': transform,
         'provenance': provenance,
         'conventions': {
@@ -470,18 +521,28 @@ def cmd_build(args):
     glb = os.path.join(CACHE_DIR, f'{args.id}.glb')
     provenance = {'config': f'data/buildings/{args.id}.pipeline.yaml'}
 
-    if not args.skip_remote:
+    # Reprise : --albedo / --glb existants sautent les étapes distantes.
+    if args.albedo:
+        albedo = args.albedo
+        if not os.path.exists(albedo):
+            sys.exit(f'albedo introuvable : {albedo}')
+        log('build', f'reprise : albedo existant {albedo} (SpriteCook sauté)')
+    else:
         asset_id = spritecook_generate(cfg, env, albedo)
         provenance['spritecook_asset_id'] = asset_id
-        task_id = meshy_image_to_3d(cfg, albedo, env, glb)
-        provenance['meshy_task_id'] = task_id
-    else:
-        if args.albedo:
-            albedo = args.albedo
-        if args.glb:
-            glb = args.glb
-        if not os.path.exists(albedo) or not os.path.exists(glb):
-            sys.exit('--skip-remote exige --albedo et --glb existants')
+
+    if args.glb:
+        glb = args.glb
+        if not os.path.exists(glb):
+            sys.exit(f'GLB introuvable : {glb}')
+        log('build', f'reprise : GLB existant {glb} (Meshy sauté)')
+    elif not args.albedo or not os.path.exists(glb):
+        # génère le modèle 3D sauf si le GLB attendu existe déjà (reprise partielle)
+        if os.path.exists(glb):
+            log('build', f'reprise : GLB existant {glb} (Meshy sauté)')
+        else:
+            task_id = meshy_image_to_3d(cfg, albedo, env, glb)
+            provenance['meshy_task_id'] = task_id
 
     transform = align_model(cfg, albedo, glb, ASSETS_DIR)
     provenance.update({'albedo': albedo, 'glb_source': glb})
@@ -519,10 +580,9 @@ def main():
 
     b = sub.add_parser('build', help='pipeline complet (SpriteCook + Meshy + alignement)')
     b.add_argument('--id', required=True)
-    b.add_argument('--skip-remote', action='store_true',
-                   help='pas d\'appels API (fichiers existants)')
-    b.add_argument('--albedo', help='(avec --skip-remote) chemin albedo existant')
-    b.add_argument('--glb', help='(avec --skip-remote) chemin GLB existant')
+    b.add_argument('--albedo', help='albedo existant : saute l\'étape SpriteCook '
+                                     '(utile en reprise après échec Meshy)')
+    b.add_argument('--glb', help='GLB existant : saute SpriteCook ET Meshy')
     b.set_defaults(func=cmd_build)
 
     a = sub.add_parser('align', help='alignement local uniquement')

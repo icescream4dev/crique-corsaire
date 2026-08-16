@@ -2,6 +2,8 @@
   "id": "port",
   "version": 1,
   "render": "model3d",
+  "tile_width": 1,
+  "tile_height": 1,
   "transform": {
     "quaternion_xyzw": [
       0.0,

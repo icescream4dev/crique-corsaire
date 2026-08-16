@@ -39,13 +39,24 @@ Créer `data/buildings/<id>.pipeline.yaml` :
 id: taverne
 name: Taverne
 anchor: ground                  # stilts (sur l'eau) ou ground (au sol)
-gangplank_direction: null       # ou north/south/east/west (Sud monde = −X)
+tile_width: 2                   # empreinte grille (défaut 1)
+tile_height: 1
+facing_direction: south         # direction de la façade/passerelle (Sud = −X)
+gangplank_direction: null       # ou north/south/east/west
 target_polycount: 3000
 sprite_description: >-
   Small pirate tavern hut with a thatched roof, ...
 art_direction:
   style: hand-drawn pixel art
   theme: pirates caribbean sunny island
+```
+
+Reprise après échec (les appels API sont chers) :
+
+```bash
+# l'albedo existe déjà (SpriteCook a réussi, échec au parsing/Meshy) :
+python3 scripts/building-pipeline.py build --id taverne --albedo cache/taverne-spritecook.png
+# le GLB existe aussi : --glb cache/taverne.glb saute SpriteCook ET Meshy
 ```
 
 ### 2. Pipeline complet (avec appels API)

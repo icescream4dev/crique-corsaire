@@ -1,0 +1,48 @@
+{
+  "id": "tavern",
+  "version": 1,
+  "render": "model3d",
+  "tile_width": 2,
+  "tile_height": 1,
+  "transform": {
+    "quaternion_xyzw": [
+      0.0,
+      0.81764762,
+      0.0,
+      -0.575719
+    ],
+    "scale": 0.408936,
+    "offset_xyz": [
+      0.003843,
+      0.108437,
+      -0.020324
+    ],
+    "yaw_deg": 250.3,
+    "fit_error_px": null,
+    "silhouette_iou": 0.727,
+    "align_mode": "silhouette_iou",
+    "deck_normal_world": [
+      -0.0038,
+      1.0,
+      0.0002
+    ],
+    "deck_planarity": 0.1932,
+    "deck_horizontal": true,
+    "faces": 2673,
+    "verts": 3491,
+    "content_width_u": 0.8675,
+    "card_height_u": 0.3325,
+    "anchor": "ground"
+  },
+  "provenance": {
+    "config": "data/buildings/tavern.pipeline.yaml",
+    "albedo": "cache/tavern-spritecook.png",
+    "glb_source": "cache/tavern.glb"
+  },
+  "conventions": {
+    "projection": "orthographic 45°/30°, 400 px/u, canvas 200 px",
+    "tile_u": 0.5,
+    "water_y": 0.0575,
+    "south_world": "-X"
+  }
+}

@@ -106,7 +106,8 @@ export class GameEngine {
 
   /** Affiche le sprite en surbrillance verte sur les tuiles où la pose est valide. */
   private updatePlacementPreview(): void {
-    if (this.selectedBuilding === 'port') {
+    const sel = this.selectedBuilding;
+    if (sel === 'port') {
       const pos: { x: number; z: number }[] = [];
       const tiles = this.state.island.tiles;
       for (let y = 0; y < tiles.length; y++) {
@@ -115,37 +116,68 @@ export class GameEngine {
         }
       }
       this.renderer.setPortPreview(pos);
+      this.renderer.setGroundPreview([], 1, 1);
+      return;
+    }
+    this.renderer.setPortPreview([]);
+    if (sel) {
+      // Bâtiment au sol (empreinte w×h) : quads verts couvrant le footprint.
+      const def = this.buildingDefs.find(d => d.id === sel);
+      const w = def?.tileWidth ?? 1;
+      const h = def?.tileHeight ?? 1;
+      const pos: { x: number; z: number }[] = [];
+      const tiles = this.state.island.tiles;
+      for (let y = 0; y < tiles.length; y++) {
+        for (let x = 0; x < tiles[y].length; x++) {
+          if (this.canPlace(sel, x, y)) pos.push({ x, z: y });
+        }
+      }
+      this.renderer.setGroundPreview(pos, w, h);
     } else {
-      this.renderer.setPortPreview([]);
+      this.renderer.setGroundPreview([], 1, 1);
     }
   }
 
   canPlace(defId: string, x: number, y: number): boolean {
-    const tile = this.state.island.tiles[y]?.[x];
-    if (!tile || tile.buildings.length) return false;
-    const t = tile.terrain;
+    const def = this.buildingDefs.find(d => d.id === defId);
+    const w = def?.tileWidth ?? 1;
+    const h = def?.tileHeight ?? 1;
+
+    // Empreinte w×h : TOUTES les tuiles du footprint doivent être valides.
+    // (x, y) = coin haut-gauche du footprint (convention ancre).
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const tile = this.state.island.tiles[y + dy]?.[x + dx];
+        if (!tile || tile.buildings.length) return false;
+        const t = tile.terrain;
+        if (defId === 'port') {
+          if (t !== 'shallow_water') return false;
+        } else if (t === 'deep_water' || t === 'shallow_water') {
+          return false;
+        }
+      }
+    }
 
     if (defId === 'port') {
-      // Empreinte 1×1. La tuile est en eau peu profonde (poteaux dans l'eau), et
-      // l'accès (passerelle, image GAUCHE → SE = grille (x-1, y+1)) touche la terre
-      // ferme. Les tuiles submergées ont été reclassées shallow_water à la génération,
-      // donc « terre ferme » = type non-eau → pur test de tuiles (norme AOE2).
-      if (t !== 'shallow_water') return false;
+      // Empreinte 1×1. L'accès (passerelle, image GAUCHE → SE = grille (x-1, y+1))
+      // touche la terre ferme. Les tuiles submergées ont été reclassées
+      // shallow_water à la génération, donc « terre ferme » = type non-eau →
+      // pur test de tuiles (norme AOE2).
       for (const [dx, dy] of [[-1, 1], [0, 1], [-1, 0]]) {
         const nt = this.state.island.tiles[y + dy]?.[x + dx]?.terrain;
         if (nt && nt !== 'deep_water' && nt !== 'shallow_water') return true;
       }
       return false;
     }
-    // Par défaut : n'importe quelle tuile terrestre
-    return t !== 'deep_water' && t !== 'shallow_water';
+    return true;
   }
 
   placeBuilding(defId: string, x: number, y: number): BuildingInstance | null {
     if (!this.canPlace(defId, x, y)) return null;
     const def = this.buildingDefs.find(d => d.id === defId);
     if (!def) return null;
-    const tile = this.state.island.tiles[y]![x]!;
+    const w = def.tileWidth ?? 1;
+    const h = def.tileHeight ?? 1;
 
     const anchor = defId === 'port' ? 'stilts' as const : 'ground' as const;
     const instance: BuildingInstance = {
@@ -159,9 +191,19 @@ export class GameEngine {
       constructionProgress: 1,
       operational: true,
     };
-    tile.buildings.push(instance);
+    // Multi-tuiles : la même instance occupe tout le footprint (le renderer ne
+    // la dessine que depuis la tuile ancre ; les autres tuiles sont « occupées »).
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        this.state.island.tiles[y + dy]![x + dx]!.buildings.push(instance);
+      }
+    }
     this.state.buildings.set(instance.id, instance);
-    this.renderer.renderBuilding(tile);
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        this.renderer.renderBuilding(this.state.island.tiles[y + dy]![x + dx]!);
+      }
+    }
     return instance;
   }
 

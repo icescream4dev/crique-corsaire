@@ -155,7 +155,10 @@ export class ThreeRenderer implements IRenderer {
   // Modèle 3D du ponton (variante 'model3d') : géométrie réelle, profondeur vraie
   private portModel: THREE.Group | null = null;
   // Modèles 3D chargés via le registre /assets/registry.json (clé = id bâtiment)
-  private buildingModels = new Map<string, THREE.Group>();
+  // + taille d'empreinte en tuiles (pour centrer sur le footprint multi-tuiles)
+  private buildingModels = new Map<string, { group: THREE.Group; tileW: number; tileH: number }>();
+  // Surbrillance verte des tuiles valides pour un bâtiment au sol (multi-tuiles)
+  private groundPreview: THREE.Group | null = null;
   // Source du rendu (cycle A/B/C/D) :
   //   spritecook = albedo SpriteCook + depth procédurale
   //   blender    = albedo Blender + depth Blender brute
@@ -340,7 +343,7 @@ export class ThreeRenderer implements IRenderer {
     if (!this.portModel) {
       const entry = this.buildingModels.get('port');
       if (entry) {
-        this.portModel = entry;
+        this.portModel = entry.group;
       } else {
         try {
           const gltf = await new GLTFLoader().loadAsync('/ponton-model.glb');
@@ -402,8 +405,12 @@ export class ThreeRenderer implements IRenderer {
             new GLTFLoader().loadAsync(entry.glb),
           ]);
           if (!metaResp.ok) continue;
-          const meta = await metaResp.json() as { transform: BuildingTransformMeta };
-          this.buildingModels.set(id, this.prepareGlb(gltf.scene, meta.transform));
+          const meta = await metaResp.json() as { transform: BuildingTransformMeta; tile_width?: number; tile_height?: number };
+          this.buildingModels.set(id, {
+            group: this.prepareGlb(gltf.scene, meta.transform),
+            tileW: meta.tile_width ?? 1,
+            tileH: meta.tile_height ?? 1,
+          });
         } catch {
           // bâtiment ignoré : le rendu box/sprite prend le relais
         }
@@ -1137,16 +1144,26 @@ export class ThreeRenderer implements IRenderer {
 
     if (!isStilts) {
       // Modèle 3D du registre (pipeline scripts/building-pipeline.py) : rendu
-      // direct si disponible. La transform du meta.json le pose avec Y min monde
-      // = 0 ; on translate vers la tuile et on remonte au niveau du terrain
-      // (+ petit enfoncement pour ancrer le modèle dans le sol).
-      const model = this.buildingModels.get(b.defId);
-      if (model) {
-        const inst = model.clone();
-        inst.position.x += cx;
-        inst.position.z += cz;
-        inst.position.y += groundY + 0.02;
-        this.scene.add(inst);
+      // direct si disponible. Le modèle n'est dessiné QU'UNE FOIS depuis la
+      // tuile ANCRE (b.gridX, b.gridY = coin du footprint) et centré sur
+      // l'empreinte w×h complète. La transform du meta.json pose Y min monde
+      // = 0 ; on translate vers le centre du footprint et on remonte au niveau
+      // du terrain (+ petit enfoncement pour ancrer le modèle dans le sol).
+      const modelEntry = this.buildingModels.get(b.defId);
+      if (modelEntry) {
+        if (tile.x === b.gridX && tile.y === b.gridY) {
+          const fw = modelEntry.tileW;   // largeur empreinte (tuiles)
+          const fh = modelEntry.tileH;   // hauteur empreinte (tuiles)
+          // centre du footprint : ancre (gridX, gridY) = coin ; le modèle est
+          // centré sur la boîte [gridX, gridX+fw) × [gridY, gridY+fh)
+          const fcx = (b.gridX + fw / 2) * TS;
+          const fcz = (b.gridY + fh / 2) * TS;
+          const inst = modelEntry.group.clone();
+          inst.position.x += fcx;
+          inst.position.z += fcz;
+          inst.position.y += groundY + 0.02;
+          this.scene.add(inst);
+        }
         return;
       }
 
@@ -1397,6 +1414,45 @@ export class ThreeRenderer implements IRenderer {
     group.renderOrder = 2;
     this.scene.add(group);
     this.portPreview = group;
+  }
+
+  // Surbrillance verte des tuiles valides pour un bâtiment AU SOL à empreinte
+  // w×h. Chaque position est le coin ancre (x, z) du footprint ; on dessine un
+  // quad translucide couvrant les w×h tuiles. (La taverne : w=2, h=1.)
+  setGroundPreview(positions: { x: number; z: number }[], tileW = 1, tileH = 1): void {
+    this.clearGroundPreview();
+    if (!positions.length) return;
+    const geo = new THREE.PlaneGeometry(tileW * TS, tileH * TS);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x37f25c, transparent: true, opacity: 0.35, depthWrite: false,
+    });
+    const group = new THREE.Group();
+    for (const p of positions) {
+      // centre du footprint : ancre = coin (p.x, p.z)
+      const cx = (p.x + tileW / 2) * TS;
+      const cz = (p.z + tileH / 2) * TS;
+      const m = new THREE.Mesh(geo, mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(cx, 0.05, cz);
+      m.renderOrder = 2;
+      group.add(m);
+    }
+    group.renderOrder = 2;
+    this.scene.add(group);
+    this.groundPreview = group;
+  }
+
+  private clearGroundPreview(): void {
+    if (this.groundPreview) {
+      this.scene.remove(this.groundPreview);
+      this.groundPreview.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+      this.groundPreview = null;
+    }
   }
 
   // --- Clear ---
