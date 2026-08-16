@@ -273,3 +273,119 @@ def fit_silhouette(V0, F, alpha_mask, target_w_u, view, right, up_s,
         if iou > iou0:
             iou0, deg0, scale0, off0 = iou, float(fine), scale, off
     return iou0, deg0, scale0, off0
+
+
+def facade_front_yaw(V0, F, uv, tex, albedo_rgba, view, right, up_s,
+                     yaw_a_deg, yaw_b_deg, W=96, H=96):
+    """Choisit entre deux yaws celui qui met la FAÇADE face à la caméra.
+
+    La silhouette seule ne distingue pas l'avant de l'arrière (symétrie) ; on
+    rasterise donc le modèle TEXTURÉ sous la caméra du jeu aux deux yaws et on
+    compare la corrélation couleur (Pearson RGB sur le masque alpha de l'albedo)
+    avec l'albedo SpriteCook — la référence façade. Retourne le yaw gagnant.
+
+    Général : fonctionne pour tout bâtiment texturé, sans heuristique sur le
+    contenu (porte/comptoir/perroquet). L'albedo fait foi.
+    """
+    import trimesh  # noqa: F401  (pour compat import)
+    from PIL import Image
+
+    TH, TW = tex.shape[0], tex.shape[1]
+    alb = albedo_rgba[:, :, :3].astype(float)
+    amask = albedo_rgba[:, :, 3] > 16
+
+    def raster(yaw_deg):
+        R = rot_y(math.radians(yaw_deg))
+        Vr = (R @ V0.T).T
+        px = Vr @ right
+        scale = 1.0 / (px.max() - px.min())
+        Vs = Vr * scale
+        Fw = Vs[F]
+        sx = (Fw @ right) * (W / 2) + W / 2
+        sy = -(Fw @ up_s) * (H / 2) + H / 2
+        fz = Fw @ view
+        zbuf = np.full((H, W), np.inf)
+        img = np.zeros((H, W, 3))
+        uvt = uv[F]
+        for i in range(len(F)):
+            xs, ys, zs = sx[i], sy[i], fz[i]
+            x0 = max(0, int(math.floor(xs.min()))); x1 = min(W - 1, int(math.ceil(xs.max())))
+            y0 = max(0, int(math.floor(ys.min()))); y1 = min(H - 1, int(math.ceil(ys.max())))
+            if x1 < x0 or y1 < y0:
+                continue
+            gx, gy = np.meshgrid(np.arange(x0, x1 + 1), np.arange(y0, y1 + 1))
+            pxg, pyg = gx + 0.5, gy + 0.5
+            x1v, y1v, x2v, y2v, x3v, y3v = xs[0], ys[0], xs[1], ys[1], xs[2], ys[2]
+            denom = (y2v - y3v) * (x1v - x3v) + (x3v - x2v) * (y1v - y3v)
+            if abs(denom) < 1e-12:
+                continue
+            w1 = ((y2v - y3v) * (pxg - x3v) + (x3v - x2v) * (pyg - y3v)) / denom
+            w2 = ((y3v - y1v) * (pxg - x3v) + (x1v - x3v) * (pyg - y3v)) / denom
+            w3 = 1 - w1 - w2
+            inside = (w1 >= -1e-4) & (w2 >= -1e-4) & (w3 >= -1e-4)
+            if not inside.any():
+                continue
+            z = w1 * zs[0] + w2 * zs[1] + w3 * zs[2]
+            sub = zbuf[y0:y1 + 1, x0:x1 + 1]
+            upd = inside & (z < sub)
+            if not upd.any():
+                continue
+            uu = w1 * uvt[i][0][0] + w2 * uvt[i][1][0] + w3 * uvt[i][2][0]
+            vv = w1 * uvt[i][0][1] + w2 * uvt[i][1][1] + w3 * uvt[i][2][1]
+            ti = np.clip((vv * (TH - 1)).astype(int), 0, TH - 1)
+            tj = np.clip((uu * (TW - 1)).astype(int), 0, TW - 1)
+            cols = tex[ti, tj]
+            yy, xx = np.where(upd)
+            img[y0 + yy, x0 + xx] = cols[yy, xx]
+            sub[upd] = z[upd]
+            zbuf[y0:y1 + 1, x0:x1 + 1] = sub
+        mask = img.sum(axis=2) > 0
+        ys, xs = np.where(mask)
+        if len(xs) == 0:
+            return np.zeros((H, W, 3)), np.zeros((H, W), bool)
+        sub = img[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+        sm = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+        return (np.asarray(Image.fromarray(sub.astype(np.uint8)).resize((W, H))).astype(float),
+                np.asarray(Image.fromarray((sm * 255).astype(np.uint8)).resize((W, H))) > 127)
+
+    alb_s = np.asarray(Image.fromarray(alb.astype(np.uint8)).resize((W, H))).astype(float)
+    am_s = np.asarray(Image.fromarray((amask * 255).astype(np.uint8)).resize((W, H))) > 127
+
+    def pearson(a, m):
+        sel = m & am_s
+        if sel.sum() < 100:
+            return -1.0
+        aa = a[sel].flatten().astype(float)
+        bb = alb_s[sel].flatten().astype(float)
+        aa = aa - aa.mean(); bb = bb - bb.mean()
+        d = math.sqrt(float((aa ** 2).sum() * (bb ** 2).sum())) + 1e-9
+        return float((aa * bb).sum() / d)
+
+    scores = {}
+    for yaw in (yaw_a_deg, yaw_b_deg):
+        img, mask = raster(yaw)
+        scores[yaw] = pearson(img, mask)
+    best = max(scores, key=scores.get)
+    return best, scores
+
+
+def textured_mesh(glb_path):
+    """Charge le GLB et retourne (V0, F, uv, texture RGB float) du mesh texturé.
+    V0 recentré sur la bbox. Lève RuntimeError si aucun mesh texturé."""
+    import trimesh
+    sc = trimesh.load(glb_path)
+    geoms = sc.geometry.values() if hasattr(sc, 'geometry') else [sc]
+    for g in geoms:
+        if getattr(g.visual, 'kind', None) == 'texture':
+            mat = g.visual.material
+            img = getattr(mat, 'baseColorTexture', None)
+            if img is None:
+                continue
+            V = np.asarray(g.vertices, float)
+            F = np.asarray(g.faces)
+            uv = np.asarray(g.visual.uv, float)
+            tex = np.array(img.convert('RGB')).astype(float)
+            center = (V.min(0) + V.max(0)) / 2
+            return V - center, F, uv, tex
+    raise RuntimeError('aucun mesh texturé dans le GLB')
+

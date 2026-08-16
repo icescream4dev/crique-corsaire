@@ -377,17 +377,12 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
         yaw_deg = 0.0
     if anchor == 'ground' and iou is not None and iou >= 0.4:
         # Bâtiment aligné sur la grille : vu par la caméra (azimut 45°), il montre
-        # exactement deux murs — nord (+X) et est (+Z), les deux diagonales bas de
-        # l'écran. Le yaw IoU-max met la façade (dessinée de face dans l'albedo)
-        # DANS L'AXE CAMÉRA (vue de coin, incohérente avec le footprint axis-aligned,
-        # bug v11.8 signalé par Julien). On SNappe donc la façade sur une diagonale
-        # visible : ±45° du yaw IoU.
-        #   yaw−45 → façade EST (+Z), côté long le long de X
-        #   yaw+45 → façade NORD (+X), côté long le long de Z
-        # Le choix vient de l'ASPECT du footprint : le côté long du bâtiment (la
-        # façade) doit suivre l'axe long de l'empreinte. 2×1 → façade est ; 1×2 →
-        # façade nord ; carré → le meilleur IoU des deux.
-        # (azimut façade = yaw − 26.1° : à yaw IoU-max la façade pointe la caméra)
+        # exactement deux murs — nord (+X) et est (+Z). Le yaw IoU-max met la
+        # façade dans l'axe caméra ; on la snape sur une diagonale visible selon
+        # l'aspect de l'empreinte (2×1 → est, 1×2 → nord). Puis on lève
+        # l'ambiguïté AVANT/ARRIÈRE par corrélation couleur avec l'albedo
+        # SpriteCook (la référence façade) — la silhouette seule ne distingue
+        # pas le dos du devant (symétrie), d'où le bug v11.8 « l'arrière visible ».
         cand_a = (yaw_deg - 45) % 360   # façade nord (+X)
         cand_b = (yaw_deg + 45) % 360   # façade est (+Z)
         tw, th = int(cfg.get('tile_width', 1)), int(cfg.get('tile_height', 1))
@@ -402,13 +397,23 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
                                           right, up_s, a_mask, target_width_u)
             chosen = cand_a if ia >= ib else cand_b
             log('align', f'  footprint carré : IoU nord={ia:.3f} est={ib:.3f}')
+        # --- avant/arrière : corrélation couleur vs albedo (général) ---
+        try:
+            _, _, uv_arr, tex = geo.textured_mesh(glb_path)
+            flip = (chosen + 180) % 360
+            facade, scores = geo.facade_front_yaw(
+                V0, F, uv_arr, tex, alb, view, right, up_s, chosen, flip)
+            log('align', f'  façade/dos : Pearson couleur yaw {chosen:.1f}° = '
+                         f'{scores[chosen]:+.3f} vs {flip:.1f}° = {scores[flip]:+.3f} '
+                         f'-> {facade:.1f}°')
+            chosen = facade
+        except RuntimeError as e:
+            log('align', f'  ⚠ pas de texture → avant/arrière non vérifié ({e})')
         iou, s_fit, (offx, offy) = geo.silhouette_iou(
             V0, F, math.radians(chosen), view, right, up_s, a_mask,
             target_width_u)
         yaw_deg = chosen
-        log('align', f'façade snapée sur diagonale grille -> yaw={yaw_deg:.1f}° '
-                     f'(façade {"nord" if chosen == cand_a else "est"}, IoU '
-                     f'{iou:.3f}) ; PCA ignorée pour ce bâtiment.')
+        log('align', f'façade orientée -> yaw={yaw_deg:.1f}° (IoU {iou:.3f})')
     else:
         candidates = [yaw_deg, (yaw_deg + 180) % 360]
         if facing_dir:
@@ -451,27 +456,23 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
 
     # --- scale + translation ---
     px_all = Vr @ right
-    # Échelle par axe. Pour le ponton (pilotis, 1×1) on reste UNIFORME : on cale
-    # la largeur projetée écran sur le sprite. Pour un bâtiment AU SOL multi-tuiles,
-    # le modèle Meshy a souvent un plan quasi carré alors que l'empreinte est 2:1 →
-    # on applique une échelle ANISOTROPE qui remplit le rectangle d'empreinte
-    # (largeur = fw, profondeur = fd) et cale la hauteur sur le sprite.
+    # Échelle UNIFORME (jamais anisotrope : elle déforme le modèle, cf. bar v11.8).
+    # Le ratio largeur/profondeur d'un modèle Meshy (~1,3:1) est acceptable pour
+    # une empreinte 2:1 — on cale l'échelle pour que le bâtiment TIENT dans le
+    # rectangle d'empreinte sans déborder (le min des deux ratios), et on cale la
+    # hauteur sur le sprite quand l'empreinte est carrée.
     scale_xyz = None
     if anchor == 'ground':
         ex = Vr[:, 0].max() - Vr[:, 0].min()
         ey = Vr[:, 1].max() - Vr[:, 1].min()
         ez = Vr[:, 2].max() - Vr[:, 2].min()
         fw, fd = footprint_u
-        sx = fw / ex if ex > 1e-9 else 1.0        # remplit la largeur (2 tuiles)
-        sz = fd / ez if ez > 1e-9 else 1.0        # tient la profondeur (1 tuile)
-        # hauteur : on veut que l'extent Y monde projeté ≈ hauteur carte du sprite.
-        # Une hauteur monde Y se projette verticalement avec facteur cos(pitch).
-        target_height_u = h_u / math.cos(geo.PITCH)
-        sy = target_height_u / ey if ey > 1e-9 else sx
-        scale_xyz = np.array([sx, sy, sz])
-        scale = float(sx)   # champ scalaire conservé (réf = axe X)
-        log('align', f'échelle anisotrope : sx={sx:.4f} sy={sy:.4f} sz={sz:.4f} '
-                     f'(empreinte {fw:.2f} × {fd:.2f} u, hauteur cible {target_height_u:.3f} u)')
+        sx = fw / ex if ex > 1e-9 else 1.0
+        sz = fd / ez if ez > 1e-9 else 1.0
+        scale = float(min(sx, sz))   # tient dans l'empreinte sans déborder
+        log('align', f'échelle uniforme : scale={scale:.5f} '
+                     f'(empreinte {fw:.2f} × {fd:.2f} u, bbox modèle '
+                     f'{ex:.2f} × {ez:.2f} u)')
     else:
         scale = target_width_u / (px_all.max() - px_all.min())
     log('align', f'scale = {scale:.6f} (largeur projetée -> {target_width_u:.3f} u)')
@@ -515,9 +516,6 @@ def align_model(cfg, albedo_path, glb_path, out_dir):
     return {
         'quaternion_xyzw': [round(float(v), 8) for v in q],
         'scale': round(float(scale), 6),
-        # Échelle par axe (bâtiments au sol multi-tuiles) ; absente = uniforme.
-        **({'scale_xyz': [round(float(v), 6) for v in scale_xyz]}
-           if scale_xyz is not None else {}),
         'offset_xyz': [round(float(v), 6) for v in t],
         'yaw_deg': round(float(yaw_deg), 2),
         'fit_error_px': round(float(resid), 2) if resid is not None else None,
