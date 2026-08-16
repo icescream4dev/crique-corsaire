@@ -8,6 +8,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { IRenderer } from '../core/ports';
 import type { Tile, IslandData } from '../core/types';
 import { terrainHeight } from '../core/terrain';
@@ -99,6 +100,20 @@ const PORT_IMMERSION = 0.25;
 // que la ligne d'eau du sprite soit à ~19,5 px au-dessus du bas des pilotis.
 const WATER_Y = 0.0575;
 
+// Transform EXACTE du modèle 3D pour coïncider avec le sprite validé.
+// Dérivée numériquement par scripts/compute-model-transform.py :
+// - quaternion reproduit l'orientation du bake Blender (yaw 135°/roll −45° =
+//   conversion, équivalent jeu yaw 45°/pitch 30°), det(R) = +1 vérifié ;
+// - scale calée sur la largeur projetée du sprite (0.41 u), hauteur projetée
+//   à −0,1 % de la carte sprite ;
+// - offset : centre projeté = centre de la tuile, point le plus bas (base des
+//   poteaux) exactement à Y = −0.04875 (= WATER_Y − 0.25·h du sprite).
+const MODEL_TRANSFORM = {
+  quaternion: new THREE.Quaternion(0.0, 0.78858051, 0.33141357, 0.51798246),
+  scale: 0.19854,
+  offset: new THREE.Vector3(-0.074329, 0.101278, -0.009244),
+};
+
 export class ThreeRenderer implements IRenderer {
   // Three.js core
   private renderer!: THREE.WebGLRenderer;
@@ -125,12 +140,15 @@ export class ThreeRenderer implements IRenderer {
   private portSpriteH = 0;
   private depthTexture: THREE.Texture | null = null; // depth map (Pixel Depth Offset)
   private contentBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
-  // Source du sprite (cycle A/B/C) :
-  //   spritecook = albedo SpriteCook + depth procédurale (bake depuis l'alpha)
+  // Modèle 3D du ponton (variante 'model3d') : géométrie réelle, profondeur vraie
+  private portModel: THREE.Group | null = null;
+  // Source du rendu (cycle A/B/C/D) :
+  //   spritecook = albedo SpriteCook + depth procédurale
   //   blender    = albedo Blender + depth Blender brute
-  //   hybrid     = albedo SpriteCook + depth 3D RECALÉE sur les pilotis SpriteCook
-  // (défaut = hybrid : c'est le rendu à évaluer)
-  private portVariant: 'spritecook' | 'blender' | 'hybrid' = 'hybrid';
+  //   hybrid     = albedo SpriteCook + depth 3D recalée
+  //   model3d    = VRAI modèle 3D (profondeur réelle dans le z-buffer)
+  // (défaut = model3d : le rendu à évaluer)
+  private portVariant: 'spritecook' | 'blender' | 'hybrid' | 'model3d' = 'model3d';
   private portPreview: THREE.Group | null = null; // surbrillance verte (mode placement)
 
   // World / camera state
@@ -295,11 +313,52 @@ export class ThreeRenderer implements IRenderer {
       this.portTexture = null;
       this.depthTexture = null;
     }
+
+    // Modèle 3D : chargé une seule fois (variante model3d). On garde la scène
+    // GLB ENTIÈRE (hiérarchie + transforms internes), puis on la normalise sur
+    // son centre de bbox et on applique la transform dérivée numériquement —
+    // exactement comme scripts/compute-model-transform.py (qui a travaillé sur
+    // les sommets monde recentrés). ponton-model.glb = ponton_3k.glb (2811 faces,
+    // la source géométrique du sprite validé).
+    if (!this.portModel) {
+      try {
+        const gltf = await new GLTFLoader().loadAsync('/ponton-model.glb');
+        const model = gltf.scene;
+        // Cube parasite Meshy éventuel : à supprimer avant de mesurer le bbox
+        const toRemove: THREE.Object3D[] = [];
+        model.traverse((o) => {
+          if (o instanceof THREE.Mesh) {
+            const pos = (o.geometry as THREE.BufferGeometry).attributes.position;
+            if (pos && pos.count === 8 && (o.geometry as THREE.BufferGeometry).index
+              && (o.geometry as THREE.BufferGeometry).index!.count === 36) {
+              toRemove.push(o);
+            } else {
+              o.castShadow = true;
+              o.receiveShadow = true;
+            }
+          }
+        });
+        toRemove.forEach((o) => o.parent?.remove(o));
+        // Normalisation : centre du bbox monde à l'origine (comme V0c = V0 − bbox_center)
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.sub(center);
+        const grp = new THREE.Group();
+        grp.add(model);
+        grp.quaternion.copy(MODEL_TRANSFORM.quaternion);
+        grp.scale.setScalar(MODEL_TRANSFORM.scale);
+        grp.position.copy(MODEL_TRANSFORM.offset);
+        this.portModel = grp;
+      } catch {
+        this.portModel = null;
+      }
+    }
   }
 
-  // Cycle spritecook → blender → hybrid → spritecook, retourne la nouvelle variante.
-  async togglePortSprite(): Promise<'spritecook' | 'blender' | 'hybrid'> {
-    const order: Array<'spritecook' | 'blender' | 'hybrid'> = ['spritecook', 'blender', 'hybrid'];
+  // Cycle spritecook → blender → hybrid → model3d → spritecook.
+  async togglePortSprite(): Promise<'spritecook' | 'blender' | 'hybrid' | 'model3d'> {
+    const order: Array<'spritecook' | 'blender' | 'hybrid' | 'model3d'> =
+      ['spritecook', 'blender', 'hybrid', 'model3d'];
     const next = order[(order.indexOf(this.portVariant) + 1) % order.length];
     this.portVariant = next;
     await this.loadPortSprites();
@@ -1106,6 +1165,16 @@ export class ThreeRenderer implements IRenderer {
   // --- Sprite ponton (port) : carte verticale immergée + ombre de contact ---
 
   private renderPortSprite(cx: number, cz: number): void {
+    // Variante model3d : le VRAI modèle 3D. Sa profondeur est RÉELLE (z-buffer),
+    // pas encodée dans une carte → l'eau s'enroule selon la vraie géométrie.
+    if (this.portVariant === 'model3d' && this.portModel) {
+      const inst = this.portModel.clone();
+      inst.position.x += cx;
+      inst.position.z += cz;
+      this.scene.add(inst);
+      return;
+    }
+
     const tex = this.portTexture!;
     const w = this.portSpriteW || TS; // largeur monde du contenu rogné
     const h = this.portSpriteH || TS; // hauteur monde du contenu rogné

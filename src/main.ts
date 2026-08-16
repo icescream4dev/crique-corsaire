@@ -52,12 +52,14 @@ async function main() {
     if (btn) btn.style.outline = next === 'port' ? '2px solid #ff0' : 'none';
   });
 
-  // Bascule SpriteCook → Blender → Hybride → SpriteCook (cycle)
+  // Bascule SpriteCook → Blender → Hybride → Modèle 3D → SpriteCook (cycle)
   document.getElementById('btn-sprite')?.addEventListener('click', async () => {
     const v = await renderer.togglePortSprite();
     const btn = document.getElementById('btn-sprite');
     if (btn) btn.textContent = v === 'blender' ? '🎨 Sprite : Blender'
-      : v === 'hybrid' ? '🎨 Sprite : Hybride' : '🎨 Sprite : SpriteCook';
+      : v === 'hybrid' ? '🎨 Sprite : Hybride'
+      : v === 'model3d' ? '🎨 Sprite : Modèle 3D'
+      : '🎨 Sprite : SpriteCook';
     engine.buildWorld(); // re-rendre avec la nouvelle texture
   });
 }
