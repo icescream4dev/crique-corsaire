@@ -97,24 +97,32 @@ def fit_residual(theta):
 
 
 print("\nBalayage du yaw (recherche du minimum d'erreur) :")
+import os
+force_yaw = os.environ.get('FORCE_YAW')
 results = []
-for deg in range(0, 360, 2):
-    theta = math.radians(deg)
+if force_yaw:
+    theta = math.radians(float(force_yaw))
     resid, s, perm = fit_residual(theta)
-    results.append((resid, deg, s, perm))
+    results.append((resid, float(force_yaw), s, perm))
+else:
+    for deg in range(0, 360, 2):
+        theta = math.radians(deg)
+        resid, s, perm = fit_residual(theta)
+        results.append((resid, deg, s, perm))
 results.sort()
 resid, deg, s, perm = results[0]
 print(f"  meilleur : yaw={deg}°  erreur={resid:.2f} px  scale_fit={s:.4f}  perm={perm}")
 print("  top 5 :")
 for r in results[:5]:
-    print(f"    yaw={r[1]:3d}° err={r[0]:.2f}px")
+    print(f"    yaw={r[1]:6.1f}° err={r[0]:.2f}px")
 
 # --- Affinage autour du meilleur ---
 best_resid, best_deg = resid, deg
-for fine in np.arange(deg - 2, deg + 2.01, 0.1):
-    r2, s2, p2 = fit_residual(math.radians(fine))
-    if r2 < best_resid:
-        best_resid, best_deg, s, perm = r2, fine, s2, p2
+if not force_yaw:
+    for fine in np.arange(deg - 2, deg + 2.01, 0.1):
+        r2, s2, p2 = fit_residual(math.radians(fine))
+        if r2 < best_resid:
+            best_resid, best_deg, s, perm = r2, fine, s2, p2
 print(f"\nAffiné : yaw={best_deg:.1f}°  erreur={best_resid:.2f} px")
 
 theta = math.radians(best_deg)
@@ -190,3 +198,31 @@ top_py = 13 + (fy.max() - fy[top_idx]) / (fy.max() - fy.min()) * (182 - 13)
 print(f"\nSommet du modèle projeté : ({top_px:.0f}, {top_py:.0f}) sur canvas 200")
 print("(dans le sprite validé, le haut de la passerelle/mât est vers le coin haut-gauche,")
 print(" la passerelle plonge vers le bas-droit ; si inversé → prendre yaw+180)")
+
+# --- DIRECTION DE LA PASSERELLE (levée d'ambiguïté N/S) ---
+# La passerelle est la structure allongée qui dépasse du deck. En vue de dessus
+# (plan XZ monde), le 1er axe principal (PCA) des sommets suit l'axe du ponton.
+# On projette cet axe dans le monde après rotation pour connaître la direction
+# cardinale de la passerelle. Sud monde = −X (voir référence cardinaux du projet).
+Vr_full = (R @ V0.T).T
+topdown = np.column_stack([Vr_full[:, 0], Vr_full[:, 2]])
+topdown_c = topdown - topdown.mean(axis=0)
+cov = topdown_c.T @ topdown_c / len(topdown_c)
+eigvals, eigvecs = np.linalg.eigh(cov)
+axis_plan = eigvecs[:, np.argmax(eigvals)]  # axe principal en vue de dessus (monde)
+# orientation de l'axe : du centre vers l'extrémité la plus peuplée (la passerelle)
+half_pos = topdown_c @ axis_plan
+# la passerelle = le côté qui s'étend le plus loin du centre
+pos_mass = (half_pos > np.percentile(half_pos, 80)).sum()
+neg_mass = (half_pos < np.percentile(half_pos, 20)).sum()
+# pointe = direction de l'extrémité la plus étendue
+extents = (half_pos.max(), -half_pos.min())
+tip_sign = +1 if extents[0] >= extents[1] else -1
+passerelle_dir = axis_plan * tip_sign  # vecteur unitaire monde (XZ)
+print(f"\nAxe principal vue de dessus (monde) : {axis_plan.round(3)} "
+      f"(val.propre {max(eigvals):.4f} vs {min(eigvals):.4f})")
+print(f"Direction passerelle (monde XZ) : [{passerelle_dir[0]:+.3f}, {passerelle_dir[1]:+.3f}]")
+print(f"  composante X : {passerelle_dir[0]:+.3f}  → "
+      f"{'SUD (−X) ✅' if passerelle_dir[0] < -0.3 else 'NORD (+X) ❌' if passerelle_dir[0] > 0.3 else 'latérale'}")
+print(f"  composante Z : {passerelle_dir[1]:+.3f}  → "
+      f"{'EST (+Z)' if passerelle_dir[1] > 0.3 else 'OUEST (−Z)' if passerelle_dir[1] < -0.3 else 'neutre'}")

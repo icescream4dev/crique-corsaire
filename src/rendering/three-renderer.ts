@@ -103,18 +103,19 @@ const WATER_Y = 0.0575;
 // Transform EXACTE du modèle 3D pour coïncider avec le sprite validé.
 // Dérivée par scripts/final-model-transform.py (balayage de yaw + appariement
 // des 3 bases de poteaux sur leurs positions écran connues du sprite) :
-// - rotation = PUR YAW de 265,5° autour de +Y. La normale du deck du modèle est
-//   déjà ≈ +Y (modèle droit) ; le deck reste donc PARFAITEMENT HORIZONTAL
-//   [−0.05, 0.999, −0.004]. (Le bug précédent reproduisait le roll caméra du
-//   bake comme rotation du modèle → deck basculé, « passerelle qui touche l'eau ».)
+// - rotation = PUR YAW de 85,5° autour de +Y (= solution 265,5° + demi-tour,
+//   Julien 2026-08-16 : « la passerelle pointe vers le nord au lieu du sud »).
+//   Vérifié par PCA de la vue de dessus : direction passerelle monde
+//   [−0.976, +0.216] → composante X négative = SUD ✅ (Sud monde = −X, voir
+//   référence cardinaux). Normale deck [0.05, 0.999, 0.004] ≈ +Y : horizontal.
 // - appariement des 3 bases de poteaux : erreur 2,8 px (cibles sprite validé).
 // - scale calée sur la largeur projetée du sprite (0.41 u) ;
 // - offset : centre projeté = centre de la tuile, point le plus bas (base des
 //   poteaux) exactement à Y = −0.04875 (= WATER_Y − 0.25·h du sprite).
 const MODEL_TRANSFORM = {
-  quaternion: new THREE.Quaternion(0.0, 0.73432251, 0.0, -0.67880075), // yaw 265,5°
+  quaternion: new THREE.Quaternion(0.0, 0.67880075, 0.0, 0.73432251), // yaw 85,5°
   scale: 0.219781,
-  offset: new THREE.Vector3(-0.074679, 0.121611, -0.121773),
+  offset: new THREE.Vector3(-0.142912, 0.121611, -0.095818),
 };
 
 export class ThreeRenderer implements IRenderer {
