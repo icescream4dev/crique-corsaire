@@ -118,6 +118,14 @@ const MODEL_TRANSFORM = {
   offset: new THREE.Vector3(-0.142912, 0.121611, -0.095818),
 };
 
+// Transform d'un bâtiment 3D, au format meta.json produit par
+// scripts/building-pipeline.py (voir aussi public/assets/<id>/meta.json).
+interface BuildingTransformMeta {
+  quaternion_xyzw: [number, number, number, number];
+  scale: number;
+  offset_xyz: [number, number, number];
+}
+
 export class ThreeRenderer implements IRenderer {
   // Three.js core
   private renderer!: THREE.WebGLRenderer;
@@ -146,6 +154,8 @@ export class ThreeRenderer implements IRenderer {
   private contentBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
   // Modèle 3D du ponton (variante 'model3d') : géométrie réelle, profondeur vraie
   private portModel: THREE.Group | null = null;
+  // Modèles 3D chargés via le registre /assets/registry.json (clé = id bâtiment)
+  private buildingModels = new Map<string, THREE.Group>();
   // Source du rendu (cycle A/B/C/D) :
   //   spritecook = albedo SpriteCook + depth procédurale
   //   blender    = albedo Blender + depth Blender brute
@@ -282,7 +292,9 @@ export class ThreeRenderer implements IRenderer {
 
     this.setupEvents();
 
-    // Chargement du sprite du ponton (promesse non bloquante ; fallback cube si absent)
+    // Registre des bâtiments 3D (pipeline scripts/building-pipeline.py), puis
+    // sprite du ponton (promesse non bloquante ; fallback cube si absent)
+    await this.loadBuildingModels();
     await this.loadPortSprites();
 
     this.onAssetsLoaded?.();
@@ -322,42 +334,82 @@ export class ThreeRenderer implements IRenderer {
 
     // Modèle 3D : chargé une seule fois (variante model3d). On garde la scène
     // GLB ENTIÈRE (hiérarchie + transforms internes), puis on la normalise sur
-    // son centre de bbox et on applique la transform dérivée numériquement —
-    // exactement comme scripts/compute-model-transform.py (qui a travaillé sur
-    // les sommets monde recentrés). ponton-model.glb = ponton_3k.glb (2811 faces,
-    // la source géométrique du sprite validé).
+    // son centre de bbox et on applique la transform du meta.json (issu du
+    // pipeline scripts/building-pipeline.py). Fallback : constantes codées en
+    // dur ci-dessus + GLB historique si le registre est absent.
     if (!this.portModel) {
-      try {
-        const gltf = await new GLTFLoader().loadAsync('/ponton-model.glb');
-        const model = gltf.scene;
-        // Cube parasite Meshy éventuel : à supprimer avant de mesurer le bbox
-        const toRemove: THREE.Object3D[] = [];
-        model.traverse((o) => {
-          if (o instanceof THREE.Mesh) {
-            const pos = (o.geometry as THREE.BufferGeometry).attributes.position;
-            if (pos && pos.count === 8 && (o.geometry as THREE.BufferGeometry).index
-              && (o.geometry as THREE.BufferGeometry).index!.count === 36) {
-              toRemove.push(o);
-            } else {
-              o.castShadow = true;
-              o.receiveShadow = true;
-            }
-          }
-        });
-        toRemove.forEach((o) => o.parent?.remove(o));
-        // Normalisation : centre du bbox monde à l'origine (comme V0c = V0 − bbox_center)
-        const box = new THREE.Box3().setFromObject(model);
-        const center = box.getCenter(new THREE.Vector3());
-        model.position.sub(center);
-        const grp = new THREE.Group();
-        grp.add(model);
-        grp.quaternion.copy(MODEL_TRANSFORM.quaternion);
-        grp.scale.setScalar(MODEL_TRANSFORM.scale);
-        grp.position.copy(MODEL_TRANSFORM.offset);
-        this.portModel = grp;
-      } catch {
-        this.portModel = null;
+      const entry = this.buildingModels.get('port');
+      if (entry) {
+        this.portModel = entry;
+      } else {
+        try {
+          const gltf = await new GLTFLoader().loadAsync('/ponton-model.glb');
+          this.portModel = this.prepareGlb(gltf.scene, {
+            quaternion_xyzw: [MODEL_TRANSFORM.quaternion.x, MODEL_TRANSFORM.quaternion.y,
+            MODEL_TRANSFORM.quaternion.z, MODEL_TRANSFORM.quaternion.w],
+            scale: MODEL_TRANSFORM.scale,
+            offset_xyz: [MODEL_TRANSFORM.offset.x, MODEL_TRANSFORM.offset.y,
+            MODEL_TRANSFORM.offset.z],
+          });
+        } catch {
+          this.portModel = null;
+        }
       }
+    }
+  }
+
+  // Nettoie une scène GLB (cube parasite Meshy, ombres) et applique une
+  // transform du pipeline : normalise le centre de bbox à l'origine puis
+  // quaternion / scale / offset du meta.json. Retourne le Group prêt à poser.
+  private prepareGlb(scene: THREE.Object3D, t: BuildingTransformMeta): THREE.Group {
+    const toRemove: THREE.Object3D[] = [];
+    scene.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        const pos = (o.geometry as THREE.BufferGeometry).attributes.position;
+        if (pos && pos.count === 8 && (o.geometry as THREE.BufferGeometry).index
+          && (o.geometry as THREE.BufferGeometry).index!.count === 36) {
+          toRemove.push(o);
+        } else {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      }
+    });
+    toRemove.forEach((o) => o.parent?.remove(o));
+    const box = new THREE.Box3().setFromObject(scene);
+    const center = box.getCenter(new THREE.Vector3());
+    scene.position.sub(center);
+    const grp = new THREE.Group();
+    grp.add(scene);
+    grp.quaternion.fromArray(t.quaternion_xyzw);
+    grp.scale.setScalar(t.scale);
+    grp.position.fromArray(t.offset_xyz);
+    return grp;
+  }
+
+  // Charge le registre des bâtiments 3D (/assets/registry.json, produit par
+  // scripts/building-pipeline.py) et chaque modèle. Silencieux si absent :
+  // le jeu retombe sur les rendus box/sprite.
+  private async loadBuildingModels(): Promise<void> {
+    try {
+      const resp = await fetch('/assets/registry.json');
+      if (!resp.ok) return;
+      const reg = await resp.json() as Record<string, { glb: string; meta: string }>;
+      for (const [id, entry] of Object.entries(reg)) {
+        try {
+          const [metaResp, gltf] = await Promise.all([
+            fetch(entry.meta),
+            new GLTFLoader().loadAsync(entry.glb),
+          ]);
+          if (!metaResp.ok) continue;
+          const meta = await metaResp.json() as { transform: BuildingTransformMeta };
+          this.buildingModels.set(id, this.prepareGlb(gltf.scene, meta.transform));
+        } catch {
+          // bâtiment ignoré : le rendu box/sprite prend le relais
+        }
+      }
+    } catch {
+      // pas de registre : rien à faire
     }
   }
 
@@ -1084,6 +1136,20 @@ export class ThreeRenderer implements IRenderer {
     }
 
     if (!isStilts) {
+      // Modèle 3D du registre (pipeline scripts/building-pipeline.py) : rendu
+      // direct si disponible. La transform du meta.json le pose avec Y min monde
+      // = 0 ; on translate vers la tuile et on remonte au niveau du terrain
+      // (+ petit enfoncement pour ancrer le modèle dans le sol).
+      const model = this.buildingModels.get(b.defId);
+      if (model) {
+        const inst = model.clone();
+        inst.position.x += cx;
+        inst.position.z += cz;
+        inst.position.y += groundY + 0.02;
+        this.scene.add(inst);
+        return;
+      }
+
       // --- Skirt : monticule de terrain qui remonte contre la base du bâtiment ---
       // Couleur = terrain sous-jacent assombri → intégration sur n'importe quel terrain
       // (sable → monticule de sable, palm → herbe/terre, mountain → roche).

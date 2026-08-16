@@ -1,0 +1,29 @@
+# Config pipeline — Port (ponton). Consommé par scripts/building-pipeline.py.
+# Convention : un bâtiment par fichier <id>.pipeline.yaml dans data/buildings/.
+
+id: port
+name: Port
+anchor: stilts                    # stilts = sur l'eau (pilotis) ; ground = posé au sol
+gangplank_direction: south        # direction monde de la passerelle (north/south/east/west ; Sud = −X)
+target_polycount: 3000            # Meshy : léger pour Android
+variations: 1                     # SpriteCook : nb de variations
+
+# Description visuelle passée à SpriteCook (l'angle dimétrique exact est ajouté
+# automatiquement par le pipeline : « quarter-view, RTS perspective, isometric
+# 2.5D, dimetric 2:1 (45° yaw / 30° pitch) »).
+sprite_description: >-
+  Small pirate wooden pier/dock floating on water, made of weathered planks
+  on 3 stilts (piles), a small ramp/gangplank, a tiny pirate flag on a pole.
+  Warm sunlit wood, sea-worn, cartoon pirate style, single asset centered.
+
+art_direction:
+  style: hand-drawn pixel art
+  theme: pirates caribbean sunny island
+  style_label: 16-bit SNES style
+
+meshy_texture_prompt: >-
+  weathered wooden planks texture, warm sunlight, pirate dock, toon shading
+
+# Référence de style (asset_id SpriteCook du premier sprite de la collection,
+# pour la cohérence visuelle) : à remplir après la première génération.
+style_reference_asset_id: null

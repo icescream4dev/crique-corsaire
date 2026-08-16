@@ -1,0 +1,6 @@
+{
+  "port": {
+    "glb": "/assets/port/model.glb",
+    "meta": "/assets/port/meta.json"
+  }
+}

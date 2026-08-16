@@ -1,0 +1,45 @@
+{
+  "id": "port",
+  "version": 1,
+  "render": "model3d",
+  "transform": {
+    "quaternion_xyzw": [
+      0.0,
+      0.67880075,
+      0.0,
+      0.73432251
+    ],
+    "scale": 0.219781,
+    "offset_xyz": [
+      -0.142912,
+      0.121611,
+      -0.095818
+    ],
+    "yaw_deg": 85.5,
+    "fit_error_px": 2.79,
+    "align_mode": "bases_poteaux",
+    "deck_normal_world": [
+      0.0518,
+      0.9987,
+      0.0042
+    ],
+    "deck_planarity": 0.1878,
+    "deck_horizontal": true,
+    "faces": 2811,
+    "verts": 3570,
+    "content_width_u": 0.41,
+    "card_height_u": 0.425,
+    "anchor": "stilts"
+  },
+  "provenance": {
+    "albedo": "public/ponton-pirate.png",
+    "glb_source": "/opt/data/cache/ponton_3k.glb",
+    "mode": "local"
+  },
+  "conventions": {
+    "projection": "orthographic 45°/30°, 400 px/u, canvas 200 px",
+    "tile_u": 0.5,
+    "water_y": 0.0575,
+    "south_world": "-X"
+  }
+}

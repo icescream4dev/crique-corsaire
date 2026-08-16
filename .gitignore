@@ -3,4 +3,10 @@ dist/
 .env
 *.log
 .DS_Store
-ponton-model.glb (20 Mo, binaire de test)
+
+# Binaires de test (le registre public/assets/ sert les GLB ; les GLB sources
+# restent dans /opt/data/cache et sont copiés par le pipeline)
+public/assets/*/model.glb
+
+# Scripts obsolètes conservés pour historique (non exécutés par le pipeline)
+scripts/archive/
