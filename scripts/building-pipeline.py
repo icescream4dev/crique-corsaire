@@ -547,11 +547,6 @@ def write_artifacts(cfg, glb_path, transform, provenance):
     dst_glb = os.path.join(out_dir, 'model.glb')
     shutil.copy(glb_path, dst_glb)
 
-    # Albedo SpriteCook : servi tel quel pour la variante sprite du bâtiment.
-    src_albedo = provenance.get('albedo')
-    if src_albedo and os.path.exists(src_albedo):
-        shutil.copy(src_albedo, os.path.join(out_dir, 'albedo.png'))
-
     meta = {
         'id': building_id,
         'version': 1,
@@ -629,7 +624,6 @@ def cmd_build(args):
     transform = align_model(cfg, albedo, glb, ASSETS_DIR)
     provenance.update({'albedo': albedo, 'glb_source': glb})
     write_artifacts(cfg, glb, transform, provenance)
-    bake_depth(cfg['id'], albedo)
     log('DONE', f'bâtiment {args.id} prêt pour intégration')
 
 
@@ -638,22 +632,7 @@ def cmd_align(args):
     transform = align_model(cfg, args.albedo, args.glb, ASSETS_DIR)
     write_artifacts(cfg, args.glb, transform,
                     {'albedo': args.albedo, 'glb_source': args.glb, 'mode': 'local'})
-    bake_depth(args.id, args.albedo)
     log('DONE', f'alignement {args.id} terminé')
-
-
-def bake_depth(building_id, albedo_path):
-    """Rasterise la depth VRAIE du modèle orienté sur le canvas de l'albedo
-    (variante sprite du bâtiment). Local, sans crédits."""
-    import subprocess
-    script = os.path.join(ROOT, 'scripts', 'bake-building-depth.py')
-    out = subprocess.run(
-        [sys.executable, script, building_id, albedo_path],
-        capture_output=True, text=True, timeout=300)
-    if out.returncode != 0:
-        log('depth', f'⚠ bake depth échoué (non bloquant) : {out.stderr[-300:]}')
-    else:
-        log('depth', f'depth.png -> public/assets/{building_id}/depth.png')
 
 
 def cmd_check(args):

@@ -63,25 +63,6 @@ async function main() {
     const btnPort = document.getElementById('btn-port');
     if (btnPort && next === 'tavern') btnPort.style.outline = 'none';
   });
-
-  // Bascule SpriteCook → Blender → Hybride → Modèle 3D → SpriteCook (cycle)
-  document.getElementById('btn-sprite')?.addEventListener('click', async () => {
-    const v = await renderer.togglePortSprite();
-    const btn = document.getElementById('btn-sprite');
-    if (btn) btn.textContent = v === 'blender' ? '🎨 Sprite : Blender'
-      : v === 'hybrid' ? '🎨 Sprite : Hybride'
-      : v === 'model3d' ? '🎨 Sprite : Modèle 3D'
-      : '🎨 Sprite : SpriteCook';
-    engine.buildWorld(); // re-rendre avec la nouvelle texture
-  });
-
-  // Bascule Modèle 3D ↔ Sprite pour les bâtiments AU SOL (taverne...)
-  document.getElementById('btn-ground-variant')?.addEventListener('click', async () => {
-    const v = await renderer.toggleGroundVariant();
-    const btn = document.getElementById('btn-ground-variant');
-    if (btn) btn.textContent = v === 'sprite' ? '🍺 Rendu : Sprite' : '🍺 Rendu : Modèle 3D';
-    engine.buildWorld();
-  });
 }
 
 main().catch(console.error);

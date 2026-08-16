@@ -93,30 +93,6 @@ const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT);
 // L'eau, l'ombre et les nuages sont étendus au-delà de la carte (l'océan continue),
 // sinon leur bord rectiligne est visible quand on panne/dézoome vers le bord du monde.
 const WORLD_EXTEND = 4;
-// Fraction de la hauteur du sprite immergée sous l'eau (le bas des piliers). La partie
-// immergée est réfractée + absorbée par le water shader (le sprite est déjà dans sceneRT).
-const PORT_IMMERSION = 0.25;
-// Niveau de flottaison du ponton (deck au-dessus de la surface d'eau Y=0). Calibré pour
-// que la ligne d'eau du sprite soit à ~19,5 px au-dessus du bas des pilotis.
-const WATER_Y = 0.0575;
-
-// Transform EXACTE du modèle 3D pour coïncider avec le sprite validé.
-// Dérivée par scripts/final-model-transform.py (balayage de yaw + appariement
-// des 3 bases de poteaux sur leurs positions écran connues du sprite) :
-// - rotation = PUR YAW de 85,5° autour de +Y (= solution 265,5° + demi-tour,
-//   Julien 2026-08-16 : « la passerelle pointe vers le nord au lieu du sud »).
-//   Vérifié par PCA de la vue de dessus : direction passerelle monde
-//   [−0.976, +0.216] → composante X négative = SUD ✅ (Sud monde = −X, voir
-//   référence cardinaux). Normale deck [0.05, 0.999, 0.004] ≈ +Y : horizontal.
-// - appariement des 3 bases de poteaux : erreur 2,8 px (cibles sprite validé).
-// - scale calée sur la largeur projetée du sprite (0.41 u) ;
-// - offset : centre projeté = centre de la tuile, point le plus bas (base des
-//   poteaux) exactement à Y = −0.04875 (= WATER_Y − 0.25·h du sprite).
-const MODEL_TRANSFORM = {
-  quaternion: new THREE.Quaternion(0.0, 0.67880075, 0.0, 0.73432251), // yaw 85,5°
-  scale: 0.219781,
-  offset: new THREE.Vector3(-0.142912, 0.121611, -0.095818),
-};
 
 // Transform d'un bâtiment 3D, au format meta.json produit par
 // scripts/building-pipeline.py (voir aussi public/assets/<id>/meta.json).
@@ -148,35 +124,12 @@ export class ThreeRenderer implements IRenderer {
   private orientationMarkers: THREE.Group | null = null; // repères N/S/E/O (débug orientation)
   private cloudTime = 0; // temps partagé eau/ombre/nuage pour des nuages synchronisés
   private sceneRT!: THREE.WebGLRenderTarget; // scene pré-rendue pour l'eau
-  private textureLoader = new THREE.TextureLoader();
-  private portTexture: THREE.Texture | null = null; // sprite du ponton (chargé async)
-  private portSpriteW = 0; // taille monde du contenu rogné du sprite
-  private portSpriteH = 0;
-  private depthTexture: THREE.Texture | null = null; // depth map (Pixel Depth Offset)
-  private contentBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
-  // Modèle 3D du ponton (variante 'model3d') : géométrie réelle, profondeur vraie
-  private portModel: THREE.Group | null = null;
   // Modèles 3D chargés via le registre /assets/registry.json (clé = id bâtiment)
   // + taille d'empreinte en tuiles (pour centrer sur le footprint multi-tuiles)
   private buildingModels = new Map<string, { group: THREE.Group; tileW: number; tileH: number }>();
-  // Variante sprite des bâtiments au sol (comme le port) : albedo + depth vraie.
-  // Chargé depuis /assets/<id>/albedo.png + /assets/<id>/depth.png.
-  private groundSprites = new Map<string, {
-    albedo: THREE.Texture; depth: THREE.Texture | null;
-    w: number; h: number;  // taille monde du contenu rogné
-  }>();
-  // Bascule de rendu des bâtiments au sol : model3d (défaut) ↔ sprite.
-  private groundVariant: 'model3d' | 'sprite' = 'model3d';
-  // Surbrillance verte des tuiles valides pour un bâtiment au sol (multi-tuiles)
+  // Surbrillance verte des tuiles valides (mode placement) — port (eau) et sol.
   private groundPreview: THREE.Group | null = null;
-  // Source du rendu (cycle A/B/C/D) :
-  //   spritecook = albedo SpriteCook + depth procédurale
-  //   blender    = albedo Blender + depth Blender brute
-  //   hybrid     = albedo SpriteCook + depth 3D recalée
-  //   model3d    = VRAI modèle 3D (profondeur réelle dans le z-buffer)
-  // (défaut = model3d : le rendu à évaluer)
-  private portVariant: 'spritecook' | 'blender' | 'hybrid' | 'model3d' = 'model3d';
-  private portPreview: THREE.Group | null = null; // surbrillance verte (mode placement)
+  private portPreview: THREE.Group | null = null;
 
   // World / camera state
   private ww = 0;
@@ -305,70 +258,11 @@ export class ThreeRenderer implements IRenderer {
 
     this.setupEvents();
 
-    // Registre des bâtiments 3D (pipeline scripts/building-pipeline.py), puis
-    // sprite du ponton (promesse non bloquante ; fallback cube si absent)
+    // Registre des bâtiments 3D (pipeline scripts/building-pipeline.py).
+    // Seul le rendu 3D pur est utilisé en jeu (plus de sprite/blender/hybride).
     await this.loadBuildingModels();
-    await this.loadPortSprites();
 
     this.onAssetsLoaded?.();
-  }
-
-  // Charge (ou recharge) l'albedo + la depth map du ponton selon la variante active.
-  //   spritecook : albedo SpriteCook + depth procédurale (bake-ponton-depth.py)
-  //   blender    : albedo Blender + depth Blender brute (obsolète, bake caméra roll −45°)
-  //   hybrid     : albedo SpriteCook + VRAIE géométrie : z-buffer du modèle 3D
-  //                orienté (yaw 85.5°) rasterisé sous la caméra du jeu
-  //                (bake-true-depth.py → ponton-true-depth.png), alignée sur
-  //                l'albedo à 0,7-1,2 px aux bases des poteaux.
-  private async loadPortSprites(): Promise<void> {
-    const albedo = this.portVariant === 'blender' ? '/ponton-blender.png' : '/ponton-pirate.png';
-    const depth = this.portVariant === 'blender' ? '/ponton-blender-depth.png'
-      : this.portVariant === 'hybrid' ? '/ponton-true-depth.png'
-      : '/ponton-pirate-depth.png';
-    try {
-      const tex = await this.textureLoader.loadAsync(albedo);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.magFilter = THREE.NearestFilter;
-      tex.minFilter = THREE.NearestFilter;
-      this.portTexture = this.cropTransparent(tex);
-
-      // Depth map (Pixel Depth Offset) : même bbox que l'albedo, données brutes (pas sRGB)
-      const dtex = await this.textureLoader.loadAsync(depth);
-      dtex.colorSpace = THREE.NoColorSpace;
-      dtex.magFilter = THREE.NearestFilter;
-      dtex.minFilter = THREE.NearestFilter;
-      if (this.contentBBox) {
-        this.depthTexture = this.cropToBbox(dtex.image as HTMLImageElement, this.contentBBox, THREE.NoColorSpace);
-      }
-    } catch {
-      this.portTexture = null;
-      this.depthTexture = null;
-    }
-
-    // Modèle 3D : chargé une seule fois (variante model3d). On garde la scène
-    // GLB ENTIÈRE (hiérarchie + transforms internes), puis on la normalise sur
-    // son centre de bbox et on applique la transform du meta.json (issu du
-    // pipeline scripts/building-pipeline.py). Fallback : constantes codées en
-    // dur ci-dessus + GLB historique si le registre est absent.
-    if (!this.portModel) {
-      const entry = this.buildingModels.get('port');
-      if (entry) {
-        this.portModel = entry.group;
-      } else {
-        try {
-          const gltf = await new GLTFLoader().loadAsync('/ponton-model.glb');
-          this.portModel = this.prepareGlb(gltf.scene, {
-            quaternion_xyzw: [MODEL_TRANSFORM.quaternion.x, MODEL_TRANSFORM.quaternion.y,
-            MODEL_TRANSFORM.quaternion.z, MODEL_TRANSFORM.quaternion.w],
-            scale: MODEL_TRANSFORM.scale,
-            offset_xyz: [MODEL_TRANSFORM.offset.x, MODEL_TRANSFORM.offset.y,
-            MODEL_TRANSFORM.offset.z],
-          });
-        } catch {
-          this.portModel = null;
-        }
-      }
-    }
   }
 
   // Nettoie une scène GLB (cube parasite Meshy, ombres) et applique une
@@ -445,95 +339,13 @@ export class ThreeRenderer implements IRenderer {
             tileW: meta.tile_width ?? 1,
             tileH: meta.tile_height ?? 1,
           });
-          // Variante sprite : albedo + depth vraie (bake-building-depth.py).
-          // Optionnel : si absent, seule la variante model3d est disponible.
-          await this.loadGroundSprite(id, meta.tile_height ?? 1);
         } catch {
-          // bâtiment ignoré : le rendu box/sprite prend le relais
+          // bâtiment ignoré : le rendu box de secours prend le relais
         }
       }
     } catch {
       // pas de registre : rien à faire
     }
-  }
-
-  // Charge albedo.png + depth.png d'un bâtiment au sol pour la variante sprite.
-  // Taille monde dérivée du canvas : un canvas de (tileH·200) px de haut vaut
-  // tileH tuiles = tileH·TS unités (convention 200 px/tuile). La largeur suit
-  // la même échelle px/u (canvas 400×200 pour une empreinte 2×1).
-  private async loadGroundSprite(id: string, tileH: number): Promise<void> {
-    try {
-      const albedo = await this.textureLoader.loadAsync(`/assets/${id}/albedo.png`);
-      albedo.colorSpace = THREE.SRGBColorSpace;
-      albedo.magFilter = THREE.NearestFilter;
-      albedo.minFilter = THREE.NearestFilter;
-      let depth: THREE.Texture | null = null;
-      try {
-        depth = await this.textureLoader.loadAsync(`/assets/${id}/depth.png`);
-        depth.colorSpace = THREE.NoColorSpace;
-        depth.magFilter = THREE.NearestFilter;
-        depth.minFilter = THREE.NearestFilter;
-      } catch { depth = null; }
-
-      // Crop des marges transparentes + bbox pour aligner la depth sur l'albedo.
-      const img = albedo.image as HTMLImageElement;
-      const ih = img.naturalHeight || img.height;
-      const scale = (tileH * TS) / ih; // px -> unité monde
-      const bbox = this.findContentBBox(img);
-      const cropped = this.cropToBbox(img, bbox);
-      const cw = bbox.maxX - bbox.minX + 1;
-      const ch = bbox.maxY - bbox.minY + 1;
-      let croppedDepth: THREE.Texture | null = null;
-      if (depth) {
-        croppedDepth = this.cropToBbox(depth.image as HTMLImageElement, bbox, THREE.NoColorSpace);
-      }
-      this.groundSprites.set(id, {
-        albedo: cropped, depth: croppedDepth,
-        w: cw * scale, h: ch * scale,
-      });
-    } catch {
-      // pas de sprite : la variante model3d reste seule disponible
-    }
-  }
-
-  // Bbox du contenu non transparent d'une image (comme cropTransparent du port).
-  private findContentBBox(img: HTMLImageElement): { minX: number; minY: number; maxX: number; maxY: number } {
-    const iw = img.naturalWidth || img.width;
-    const ih = img.naturalHeight || img.height;
-    const cnv = document.createElement('canvas');
-    cnv.width = iw; cnv.height = ih;
-    const ctx = cnv.getContext('2d')!;
-    ctx.drawImage(img, 0, 0);
-    const data = ctx.getImageData(0, 0, iw, ih).data;
-    let minX = iw, minY = ih, maxX = -1, maxY = -1;
-    for (let y = 0; y < ih; y++) {
-      for (let x = 0; x < iw; x++) {
-        if (data[(y * iw + x) * 4 + 3] > 16) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        }
-      }
-    }
-    if (maxX < 0) return { minX: 0, minY: 0, maxX: iw - 1, maxY: ih - 1 };
-    return { minX, minY, maxX, maxY };
-  }
-
-  // Cycle spritecook → blender → hybrid → model3d → spritecook.
-  async togglePortSprite(): Promise<'spritecook' | 'blender' | 'hybrid' | 'model3d'> {
-    const order: Array<'spritecook' | 'blender' | 'hybrid' | 'model3d'> =
-      ['spritecook', 'blender', 'hybrid', 'model3d'];
-    const next = order[(order.indexOf(this.portVariant) + 1) % order.length];
-    this.portVariant = next;
-    await this.loadPortSprites();
-    return this.portVariant;
-  }
-
-  // Bascule model3d ↔ sprite pour les bâtiments AU SOL (comme la bascule du port).
-  async toggleGroundVariant(): Promise<'model3d' | 'sprite'> {
-    this.groundVariant = this.groundVariant === 'model3d' ? 'sprite' : 'model3d';
-    return this.groundVariant;
   }
 
   onReady(fn: () => void) { this.onAssetsLoaded = fn; }
@@ -1231,66 +1043,47 @@ export class ThreeRenderer implements IRenderer {
   renderBuilding(tile: Tile): void {
     if (!tile.buildings.length) return;
     const b = tile.buildings[0];
-
-    // Centré sur la tuile (pas le coin) — corrige le décalage d'une demi-tuile
-    const cx = (b.gridX + 0.5) * TS;
-    const cz = (b.gridY + 0.5) * TS;
-    const groundY = this.getHeight(tile) * HEIGHT_SCALE;
-
-    // Sur l'eau (pilotis) : pas de socle — les pilotis sortent directement de l'eau,
-    // le bâtiment flotte au niveau de la surface.
     const isStilts = b.anchor === 'stilts';
-    const baseY = isStilts ? 0.02 : groundY + 0.03;
 
-    // Port sur l'eau : sprite ponton en surcouche quand la texture est prête
-    if (isStilts && b.defId === 'port' && this.portTexture) {
-      this.renderPortSprite(cx, cz);
+    // Rendu 3D pur (seul mode). Le modèle est dessiné QU'UNE FOIS depuis la
+    // tuile ANCRE (b.gridX, b.gridY = coin du footprint) et centré sur
+    // l'empreinte w×h complète.
+    const modelEntry = this.buildingModels.get(b.defId);
+    if (modelEntry) {
+      if (tile.x === b.gridX && tile.y === b.gridY) {
+        const fw = modelEntry.tileW;   // largeur empreinte (tuiles)
+        const fh = modelEntry.tileH;   // hauteur empreinte (tuiles)
+        // centre du footprint : ancre (gridX, gridY) = coin ; le modèle est
+        // centré sur la boîte [gridX, gridX+fw) × [gridY, gridY+fh)
+        const fcx = (b.gridX + fw / 2) * TS;
+        const fcz = (b.gridY + fh / 2) * TS;
+        const inst = modelEntry.group.clone();
+        inst.position.x += fcx;
+        inst.position.z += fcz;
+        if (isStilts) {
+          // Sur l'eau (pilotis) : la transform du meta.json pose déjà Y min à
+          // −0.049 (base des pilotis sous la surface) → aucun offset vertical.
+          inst.position.y += 0.0;
+        } else {
+          // Au sol : la transform pose Y min monde = 0 ; on remonte au niveau
+          // du terrain (+ léger enfoncement pour ancrer le modèle dans le sol).
+          const groundY = this.getHeight(tile) * HEIGHT_SCALE;
+          inst.position.y += groundY + 0.02;
+        }
+        this.scene.add(inst);
+      }
       return;
     }
 
+    // --- Secours : pas de modèle 3D → boîte posée ---
+    const cx = (b.gridX + 0.5) * TS;
+    const cz = (b.gridY + 0.5) * TS;
+    const groundY = this.getHeight(tile) * HEIGHT_SCALE;
+    const baseY = isStilts ? 0.02 : groundY + 0.03;
+
     if (!isStilts) {
-      // Variante sprite (bascule model3d ↔ sprite) : dessin SpriteCook + depth
-      // vraie rasterisée. Rendu depuis la tuile ANCRE, centré sur le footprint.
-      if (this.groundVariant === 'sprite') {
-        const spr = this.groundSprites.get(b.defId);
-        if (spr && tile.x === b.gridX && tile.y === b.gridY) {
-          const fw = this.buildingModels.get(b.defId)?.tileW ?? 1;
-          const fh = this.buildingModels.get(b.defId)?.tileH ?? 1;
-          const fcx = (b.gridX + fw / 2) * TS;
-          const fcz = (b.gridY + fh / 2) * TS;
-          this.renderGroundSprite(spr, fcx, fcz, groundY);
-          return;
-        }
-        if (spr) return; // sprite déjà dessiné depuis la tuile ancre
-      }
-
-      // Modèle 3D du registre (pipeline scripts/building-pipeline.py) : rendu
-      // direct si disponible. Le modèle n'est dessiné QU'UNE FOIS depuis la
-      // tuile ANCRE (b.gridX, b.gridY = coin du footprint) et centré sur
-      // l'empreinte w×h complète. La transform du meta.json pose Y min monde
-      // = 0 ; on translate vers le centre du footprint et on remonte au niveau
-      // du terrain (+ petit enfoncement pour ancrer le modèle dans le sol).
-      const modelEntry = this.buildingModels.get(b.defId);
-      if (modelEntry) {
-        if (tile.x === b.gridX && tile.y === b.gridY) {
-          const fw = modelEntry.tileW;   // largeur empreinte (tuiles)
-          const fh = modelEntry.tileH;   // hauteur empreinte (tuiles)
-          // centre du footprint : ancre (gridX, gridY) = coin ; le modèle est
-          // centré sur la boîte [gridX, gridX+fw) × [gridY, gridY+fh)
-          const fcx = (b.gridX + fw / 2) * TS;
-          const fcz = (b.gridY + fh / 2) * TS;
-          const inst = modelEntry.group.clone();
-          inst.position.x += fcx;
-          inst.position.z += fcz;
-          inst.position.y += groundY + 0.02;
-          this.scene.add(inst);
-        }
-        return;
-      }
-
       // --- Skirt : monticule de terrain qui remonte contre la base du bâtiment ---
       // Couleur = terrain sous-jacent assombri → intégration sur n'importe quel terrain
-      // (sable → monticule de sable, palm → herbe/terre, mountain → roche).
       const terrainColor = C[tile.terrain] ?? C.palm!;
       const skirtColor = new THREE.Color(terrainColor).multiplyScalar(0.78);
       const skirtGeo = new THREE.CylinderGeometry(TS * 0.22, TS * 0.30, TS * 0.09, 8);
@@ -1320,221 +1113,6 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(mesh);
   }
 
-  // Croppe une région (px image d'origine) en CanvasTexture NearestFilter.
-  private cropToBbox(img: HTMLImageElement, bbox: { minX: number; minY: number; maxX: number; maxY: number }, colorSpace: string = THREE.SRGBColorSpace): THREE.Texture {
-    const cw = bbox.maxX - bbox.minX + 1;
-    const ch = bbox.maxY - bbox.minY + 1;
-    const out = document.createElement('canvas');
-    out.width = cw;
-    out.height = ch;
-    out.getContext('2d')!.drawImage(img, bbox.minX, bbox.minY, cw, ch, 0, 0, cw, ch);
-    const cropped = new THREE.CanvasTexture(out);
-    cropped.colorSpace = colorSpace;
-    cropped.magFilter = THREE.NearestFilter;
-    cropped.minFilter = THREE.NearestFilter;
-    cropped.needsUpdate = true;
-    return cropped;
-  }
-
-  // Rogne les marges transparentes d'une texture de sprite, pour que la base du
-  // CONTENU (pas du canvas) puisse être posée exactement au niveau de l'eau.
-  // Stocke aussi le bbox pour découper la depth map au même endroit.
-  private cropTransparent(tex: THREE.Texture): THREE.Texture {
-    const img = tex.image as HTMLImageElement;
-    const iw = img.naturalWidth || img.width;
-    const ih = img.naturalHeight || img.height;
-    const c = document.createElement('canvas');
-    c.width = iw;
-    c.height = ih;
-    const ctx = c.getContext('2d')!;
-    ctx.drawImage(img, 0, 0);
-    const data = ctx.getImageData(0, 0, iw, ih).data;
-    let minX = iw, minY = ih, maxX = -1, maxY = -1;
-    for (let y = 0; y < ih; y++) {
-      for (let x = 0; x < iw; x++) {
-        if (data[(y * iw + x) * 4 + 3] > 16) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        }
-      }
-    }
-    if (maxX < minX || maxY < minY) return tex; // aucune zone opaque → inchangé
-    const bbox = { minX, minY, maxX, maxY };
-    this.contentBBox = bbox;
-    const cw = maxX - minX + 1;
-    const ch = maxY - minY + 1;
-    // Échelle monde : l'image d'origine (iw px) représente 1 tuile = TS unités
-    const scale = TS / iw;
-    this.portSpriteW = cw * scale;
-    this.portSpriteH = ch * scale;
-    return this.cropToBbox(img, bbox);
-  }
-
-  // --- Sprite ponton (port) : carte verticale immergée + ombre de contact ---
-
-  // --- Sprite au sol (variante sprite des bâtiments ground) ---
-  // Carte verticale face caméra (yaw π/4 constant), ancrée au sol : la BASE du
-  // sprite rogné est posée exactement au niveau du terrain. La depth map vraie
-  // (rasterisée depuis le modèle 3D orienté) décale chaque pixel dans le
-  // z-buffer (Pixel Depth Offset) → occlusion correcte avec le terrain et les
-  // autres objets. Pas d'absorption (pas d'eau) ; pas de socle (le sprite est
-  // opaque jusqu'à la base).
-  private renderGroundSprite(spr: { albedo: THREE.Texture; depth: THREE.Texture | null; w: number; h: number },
-                             cx: number, cz: number, groundY: number): void {
-    const w = spr.w || TS;
-    const h = spr.h || TS;
-    const yaw = Math.PI / 4;
-
-    // Ombre portée douce sur le sol (ancre visuellement le sprite)
-    const shadowGeo = new THREE.CircleGeometry(Math.max(w, h) * 0.30, 20);
-    const shadowMat = new THREE.MeshBasicMaterial({
-      color: 0x000000, transparent: true, opacity: 0.18, depthWrite: false,
-    });
-    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.set(cx, groundY + 0.005, cz);
-    shadow.renderOrder = 2;
-    this.scene.add(shadow);
-
-    const geo = new THREE.PlaneGeometry(w, h);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uMap: { value: spr.albedo },
-        uDepthMap: { value: spr.depth },
-        uDepthRange: { value: 1.0 },
-        uNear: { value: this.camera.near },
-        uFar: { value: this.camera.far },
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: `
-        varying vec2 vUv;
-        uniform sampler2D uMap;
-        uniform sampler2D uDepthMap;
-        uniform float uDepthRange;
-        uniform float uNear;
-        uniform float uFar;
-        void main() {
-          vec4 tex = texture2D(uMap, vUv);
-          if (tex.a < 0.5) discard;
-          float d = texture2D(uDepthMap, vUv).r;
-          float offset = (d - 0.5) * uDepthRange;
-          gl_FragDepth = gl_FragCoord.z - offset / (uFar - uNear);
-          gl_FragColor = tex;
-        }`,
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthWrite: true,
-    });
-    const sprite = new THREE.Mesh(geo, mat);
-    sprite.rotation.y = yaw;
-    // base au niveau du sol : centre = groundY + h/2 (léger enfoncement anti-flicker)
-    sprite.position.set(cx, groundY + h * 0.5 + 0.01, cz);
-    sprite.renderOrder = 2;
-    this.scene.add(sprite);
-  }
-
-  private renderPortSprite(cx: number, cz: number): void {
-    // Variante model3d : le VRAI modèle 3D. Sa profondeur est RÉELLE (z-buffer),
-    // pas encodée dans une carte → l'eau s'enroule selon la vraie géométrie.
-    if (this.portVariant === 'model3d' && this.portModel) {
-      const inst = this.portModel.clone();
-      inst.position.x += cx;
-      inst.position.z += cz;
-      this.scene.add(inst);
-      return;
-    }
-
-    const tex = this.portTexture!;
-    const w = this.portSpriteW || TS; // largeur monde du contenu rogné
-    const h = this.portSpriteH || TS; // hauteur monde du contenu rogné
-    const waterY = WATER_Y;
-    // Absorption Beer-Lambert dans le SPRITE (pas dans l'eau) : la partie immergée
-    // s'assombrit vers le noir, jamais vers la couleur de l'eau (sinon turquoise).
-    // absorbK dérivé : ~95 % d'atténuation au bas du sprite (immersion réelle =
-    // PORT_IMMERSION·h − waterY, pas PORT_IMMERSION·h car waterY ≠ 0).
-    const absorbK = -Math.log(0.05) / Math.max(0.001, PORT_IMMERSION * h - waterY);
-
-    // Perspective fixe : la caméra a un yaw constant (π/4, voir updateCamera).
-    // Tous les sprites partagent donc la MÊME orientation — pas de billboard par position
-    // (en projection ortho, la direction de vue est constante, parallèle).
-    const yaw = Math.PI / 4;
-
-    // 1. Ombre portée : ellipse sombre sur la surface (ancre le sprite)
-    const shadowGeo = new THREE.CircleGeometry(TS * 0.38, 20);
-    const shadowMat = new THREE.MeshBasicMaterial({
-      color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false,
-    });
-    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.set(cx, waterY, cz);
-    shadow.renderOrder = 2;
-    this.scene.add(shadow);
-
-    // 2. Sprite : carte verticale, base IMMERGÉE. La depth map (gris) décale chaque pixel
-    //    dans le depth buffer (Pixel Depth Offset) → l'eau le recouvre en suivant la
-    //    perspective (pilotis proches/loin à des profondeurs différentes).
-    const geo = new THREE.PlaneGeometry(w, h);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uMap: { value: tex },
-        uDepthMap: { value: this.depthTexture },
-        uDepthRange: { value: 1.0 }, // amplitude monde du décalage (offset = (d-0.5)*range)
-        uNear: { value: this.camera.near },
-        uFar: { value: this.camera.far },
-        uWaterLevel: { value: 0.0 },  // surface de l'eau (Y monde)
-        uAbsorbK: { value: absorbK }, // absorption Beer-Lambert de la partie immergée
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        varying float vWorldY;
-        void main() {
-          vUv = uv;
-          vec4 worldPos = modelMatrix * vec4(position, 1.0);
-          vWorldY = worldPos.y;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: `
-        varying vec2 vUv;
-        varying float vWorldY;
-        uniform sampler2D uMap;
-        uniform sampler2D uDepthMap;
-        uniform float uDepthRange;
-        uniform float uNear;
-        uniform float uFar;
-        uniform float uWaterLevel;
-        uniform float uAbsorbK;
-        void main() {
-          vec4 tex = texture2D(uMap, vUv);
-          if (tex.a < 0.5) discard;
-          float d = texture2D(uDepthMap, vUv).r; // 0..1 (0.5 = base)
-          // d > 0.5 → plus proche (gl_FragDepth plus petit) ; d < 0.5 → plus loin
-          float offset = (d - 0.5) * uDepthRange;
-          gl_FragDepth = gl_FragCoord.z - offset / (uFar - uNear);
-          // Absorption : immersion = submersion verticale + profondeur avant/arrière
-          // (le Pixel Depth Offset est le long de l'axe de vue → vertical = ×sin(30°) = ×0.5)
-          float immersion = max(0.0, (uWaterLevel - vWorldY) + (0.5 - d) * uDepthRange * 0.5);
-          tex.rgb *= exp(-uAbsorbK * immersion);
-          gl_FragColor = tex;
-        }`,
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthWrite: true,
-    });
-    const sprite = new THREE.Mesh(geo, mat);
-    sprite.rotation.y = yaw;
-    // base = waterY - h*PORT_IMMERSION  →  centre = waterY + h*(0.5 - PORT_IMMERSION)
-    sprite.position.set(cx, waterY + h * (0.5 - PORT_IMMERSION), cz);
-    sprite.renderOrder = 2;
-    this.scene.add(sprite);
-  }
-
   // --- Hauteur lissée (pour le placement) ---
 
   // Hauteur lissée du terrain au point monde (wx, wz), par interpolation bilinéaire
@@ -1554,107 +1132,68 @@ export class ThreeRenderer implements IRenderer {
 
   // --- Surbrillance verte (mode placement) ---
 
-  // Affiche le sprite ponton en vert translucide sur chaque tuile valide.
-  // Réutilise la MÊME position/orientation que le vrai sprite (yaw π/4, base
-  // immergée) pour que l'aperçu soit fidèle à l'emplacement final.
+  // --- Surbrillance verte (mode placement) : ghost = MODÈLE 3D cloné teinté ---
+  // Le ghost montre la VRAIE géométrie du bâtiment (fidèle à l'emplacement
+  // final). La géométrie est PARTAGÉE avec le modèle source (clone shallow),
+  // donc on ne la dispose jamais ici ; seul le matériau vert est jetable.
+
   setPortPreview(positions: { x: number; z: number }[]): void {
-    if (this.portPreview) {
-      this.scene.remove(this.portPreview);
-      this.portPreview.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
-      this.portPreview = null;
-    }
-    if (!positions.length || !this.portTexture) return;
-
-    const w = this.portSpriteW || TS;
-    const h = this.portSpriteH || TS;
-    const waterY = WATER_Y;
-    const yaw = Math.PI / 4;
-    const geo = new THREE.PlaneGeometry(w, h);
-    // Vert translucide : le sprite entier est teinté vert (surbrillance), sa forme
-    // vient de l'alpha du sprite (alphaTest). depthWrite:false → n'interfère pas avec
-    // la depth map du vrai sprite ni avec l'eau.
-    const mat = new THREE.MeshBasicMaterial({
-      map: this.portTexture,
-      color: 0x37f25c,
-      transparent: true,
-      opacity: 0.6,
-      alphaTest: 0.5,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-
-    const group = new THREE.Group();
-    for (const p of positions) {
-      const cx = (p.x + 0.5) * TS;
-      const cz = (p.z + 0.5) * TS;
-      const m = new THREE.Mesh(geo, mat);
-      m.rotation.y = yaw;
-      m.position.set(cx, waterY + h * (0.5 - PORT_IMMERSION), cz);
-      m.renderOrder = 2;
-      group.add(m);
-    }
-    group.renderOrder = 2;
-    this.scene.add(group);
-    this.portPreview = group;
+    this.clearPreview(this.portPreview);
+    this.portPreview = null;
+    const entry = this.buildingModels.get('port');
+    if (!entry || !positions.length) return;
+    this.portPreview = this.buildGhostPreview(entry, positions, null);
+    this.scene.add(this.portPreview);
   }
 
-  // Surbrillance des tuiles valides pour un bâtiment AU SOL à empreinte w×h.
-  // Chaque position est le coin ancre (x, z) du footprint. Si le sprite du
-  // bâtiment est chargé (variante sprite ou albedo dispo), on affiche le VRAI
-  // sprite teinté vert (comme le ghost du port) ; sinon un quad vert.
   setGroundPreview(positions: { x: number; z: number }[], tileW = 1, tileH = 1,
                    buildingId?: string): void {
-    this.clearGroundPreview();
-    if (!positions.length) return;
-
-    // Sprite ghost : albedo du bâtiment rogné + teinté vert, même géométrie que
-    // le rendu final (carte verticale face caméra, base au sol).
-    const spr = buildingId ? this.groundSprites.get(buildingId) : undefined;
-    if (spr) {
-      const w = spr.w || TS;
-      const h = spr.h || TS;
-      const yaw = Math.PI / 4;
-      const planeGeo = new THREE.PlaneGeometry(w, h);
-      const ghostMat = new THREE.MeshBasicMaterial({
-        map: spr.albedo,
-        color: 0x37f25c,
-        transparent: true,
-        opacity: 0.6,
-        alphaTest: 0.5,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      const group = new THREE.Group();
-      for (const p of positions) {
-        const cx = (p.x + tileW / 2) * TS;
-        const cz = (p.z + tileH / 2) * TS;
-        // hauteur terrain au centre du footprint (le sprite suit le relief)
-        const gy = this.sampleGroundHeight(cx, cz);
-        const m = new THREE.Mesh(planeGeo, ghostMat);
-        m.rotation.y = yaw;
-        m.position.set(cx, (Number.isFinite(gy) ? gy : 0) + h * 0.5 + 0.01, cz);
-        m.renderOrder = 2;
-        group.add(m);
-      }
-      group.renderOrder = 2;
-      this.scene.add(group);
-      this.groundPreview = group;
+    this.clearPreview(this.groundPreview);
+    this.groundPreview = null;
+    const entry = buildingId ? this.buildingModels.get(buildingId) : undefined;
+    if (!entry || !positions.length) {
+      // Pas de modèle : simple quad vert couvrant l'empreinte (secours).
+      if (positions.length) this.groundPreview = this.buildQuadPreview(positions, tileW, tileH);
+      if (this.groundPreview) this.scene.add(this.groundPreview);
       return;
     }
+    this.groundPreview = this.buildGhostPreview(entry, positions, (cx, cz) =>
+      (Number.isFinite(this.sampleGroundHeight(cx, cz)) ? this.sampleGroundHeight(cx, cz) : 0));
+    this.scene.add(this.groundPreview);
+  }
 
-    // Fallback : quad vert couvrant l'empreinte w×h.
+  // Ghost 3D teinté vert : un clone du modèle par position valide.
+  // liftY : renvoie la hauteur du sol (null = laisser la transform du meta).
+  private buildGhostPreview(entry: { group: THREE.Group; tileW: number; tileH: number },
+                            positions: { x: number; z: number }[],
+                            liftY: ((cx: number, cz: number) => number) | null): THREE.Group {
+    const ghostMat = new THREE.MeshBasicMaterial({
+      color: 0x37f25c, transparent: true, opacity: 0.5, depthWrite: false,
+    });
+    const group = new THREE.Group();
+    for (const p of positions) {
+      const fcx = (p.x + entry.tileW / 2) * TS;
+      const fcz = (p.z + entry.tileH / 2) * TS;
+      const inst = entry.group.clone();
+      inst.traverse((o) => { if (o instanceof THREE.Mesh) o.material = ghostMat; });
+      inst.position.x += fcx;
+      inst.position.z += fcz;
+      if (liftY) inst.position.y += liftY(fcx, fcz) + 0.02;
+      group.add(inst);
+    }
+    group.renderOrder = 2;
+    group.userData.ghostMat = ghostMat;
+    return group;
+  }
+
+  // Quad vert de secours (bâtiment sans modèle 3D).
+  private buildQuadPreview(positions: { x: number; z: number }[], tileW: number, tileH: number): THREE.Group {
     const geo = new THREE.PlaneGeometry(tileW * TS, tileH * TS);
     const mat = new THREE.MeshBasicMaterial({
       color: 0x37f25c, transparent: true, opacity: 0.35, depthWrite: false,
     });
     const group = new THREE.Group();
     for (const p of positions) {
-      // centre du footprint : ancre = coin (p.x, p.z)
       const cx = (p.x + tileW / 2) * TS;
       const cz = (p.z + tileH / 2) * TS;
       const m = new THREE.Mesh(geo, mat);
@@ -1664,21 +1203,25 @@ export class ThreeRenderer implements IRenderer {
       group.add(m);
     }
     group.renderOrder = 2;
-    this.scene.add(group);
-    this.groundPreview = group;
+    group.userData.ownGeometry = true;
+    return group;
   }
 
-  private clearGroundPreview(): void {
-    if (this.groundPreview) {
-      this.scene.remove(this.groundPreview);
-      this.groundPreview.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
-      this.groundPreview = null;
-    }
+  // Nettoie un groupe de preview : dispose le matériau ghost (jetable) et les
+  // géométries propres (quad), jamais les géométries partagées du modèle.
+  private clearPreview(g: THREE.Group | null): void {
+    if (!g) return;
+    this.scene.remove(g);
+    const ghostMat = g.userData.ghostMat as THREE.Material | undefined;
+    const ownGeometry = g.userData.ownGeometry as boolean | undefined;
+    g.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        if (ownGeometry) o.geometry.dispose();
+        if (o.material === ghostMat) { /* partagé, disposé une fois ci-dessous */ }
+        else if (ownGeometry) (o.material as THREE.Material).dispose();
+      }
+    });
+    ghostMat?.dispose();
   }
 
   // --- Clear ---
