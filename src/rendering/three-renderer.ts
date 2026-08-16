@@ -286,7 +286,12 @@ export class ThreeRenderer implements IRenderer {
           && (o.geometry as THREE.BufferGeometry).index!.count === 36) {
           toRemove.push(o);
         } else {
-          o.castShadow = true;
+          // PAS d'ombre projetée physique (castShadow=false) : sur une pente
+          // elle s'étire/déforme, et pour un ponton elle tombe sur le FOND de
+          // l'eau (plus bas que les poteaux) → ombre décalée. Les RTS utilisent
+          // un blob shadow posé à plat sur la surface à la place (voir
+          // renderBuilding) : l'ombre épouse le sol par construction.
+          o.castShadow = false;
           o.receiveShadow = true;
         }
       }
@@ -637,6 +642,41 @@ export class ThreeRenderer implements IRenderer {
 
     // Exposer la hauteur lissée finale (0 = surface de l'eau) pour le placement
     // des bâtiments (le type 'sand' côtier est tiré sous 0 par le lissage → submergé).
+
+    // --- Fondations RTS (terrain flattening) : aplatir le terrain sous les
+    // bâtiments AU SOL. Technique AoE2/SC2/C&C : le terrain se nivelle à la
+    // hauteur du centre de l'empreinte avec une rampe douce d'1 tuile au bord.
+    // Sans ça, un bâtiment rigide posé à une seule hauteur sur une pente flotte
+    // d'un côté et s'enfonce de l'autre → ombre décalée visible.
+    for (const row of tiles) {
+      for (const tile of row) {
+        const b = tile.buildings[0];
+        if (!b || b.anchor === 'stilts') continue;      // pilotis = pas de fondation
+        if (tile.x !== b.gridX || tile.y !== b.gridY) continue; // tuile ancre
+        const entry = this.buildingModels.get(b.defId);
+        const fw = entry?.tileW ?? 1;
+        const fh = entry?.tileH ?? 1;
+        // hauteur cible = hauteur lissée au centre du footprint
+        const cx = b.gridX + fw / 2;
+        const cz = b.gridY + fh / 2;
+        const x0 = Math.floor(cx), z0 = Math.floor(cz);
+        const tx = cx - x0, tz = cz - z0;
+        const g = (col: number, row: number): number => heightGrid[row]?.[col] ?? 0;
+        const hFlat = (g(x0, z0) * (1 - tx) + g(x0 + 1, z0) * tx) * (1 - tz)
+                    + (g(x0, z0 + 1) * (1 - tx) + g(x0 + 1, z0 + 1) * tx) * tz;
+        // rampe : mix linéaire sur 1 tuile de marge autour de l'empreinte
+        for (let gz = b.gridY; gz <= b.gridY + fh; gz++) {
+          for (let gx = b.gridX; gx <= b.gridX + fw; gx++) {
+            const d = Math.max(
+              Math.max(b.gridX - gx, gx - (b.gridX + fw), 0),
+              Math.max(b.gridY - gz, gz - (b.gridY + fh), 0),
+            );
+            const tRamp = Math.min(Math.max(d, 0), 1); // 0 intérieur → 1 bord
+            heightGrid[gz][gx] = hFlat * (1 - tRamp) + g(gx, gz) * tRamp;
+          }
+        }
+      }
+    }
     this.heightGrid = heightGrid;
 
     // Déplacement vertical + correspondance grille
@@ -1057,6 +1097,27 @@ export class ThreeRenderer implements IRenderer {
         // centré sur la boîte [gridX, gridX+fw) × [gridY, gridY+fh)
         const fcx = (b.gridX + fw / 2) * TS;
         const fcz = (b.gridY + fh / 2) * TS;
+
+        // --- Blob shadow (ombre en décalque au sol) : technique RTS classique.
+        // Un disque sombre semi-transparent posé À PLAT sur la surface (terrain
+        // lissé pour le sol, surface de l'eau pour le ponton) : il épouse le
+        // sol par construction et ne peut jamais se décaler, même quand le fond
+        // est plus bas que les pilotis (l'ombre projetée physique, elle, tombe
+        // sur le fond lointain → décalage visible).
+        const blobR = (fw > fh ? fw : fh) * TS * 0.62;
+        const blobY = isStilts
+          ? 0.02                                   // surface de l'eau (Y=0) + epsilon
+          : (Number.isFinite(this.sampleGroundHeight(fcx, fcz)) ? this.sampleGroundHeight(fcx, fcz) : 0) + 0.015;
+        const blob = new THREE.Mesh(
+          this.blobShadowGeo(),
+          this.blobShadowMat(),
+        );
+        blob.position.set(fcx, blobY, fcz);
+        blob.scale.setScalar(blobR);
+        blob.renderOrder = 0.5; // sous le bâtiment, au-dessus du terrain
+        blob.userData.sharedBlob = true; // ressources partagées → pas de dispose en clear()
+        this.scene.add(blob);
+
         const inst = modelEntry.group.clone();
         inst.position.x += fcx;
         inst.position.z += fcz;
@@ -1085,6 +1146,18 @@ export class ThreeRenderer implements IRenderer {
     const cz = (b.gridY + 0.5) * TS;
     const groundY = this.sampleGroundHeight(cx, cz);
     const baseY = isStilts ? 0.02 : (Number.isFinite(groundY) ? groundY : 0) + 0.03;
+
+    // --- Blob shadow (ombre décalque) pour le secours aussi ---
+    const blobR = TS * 0.62;
+    const blobY = isStilts
+      ? 0.02
+      : (Number.isFinite(groundY) ? groundY : 0) + 0.015;
+    const blob = new THREE.Mesh(this.blobShadowGeo(), this.blobShadowMat());
+    blob.position.set(cx, blobY, cz);
+    blob.scale.setScalar(blobR);
+    blob.renderOrder = 0.5;
+    blob.userData.sharedBlob = true;
+    this.scene.add(blob);
 
     if (!isStilts) {
       // --- Skirt : monticule de terrain qui remonte contre la base du bâtiment ---
@@ -1167,6 +1240,38 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(this.groundPreview);
   }
 
+  // Blob shadow — géométrie + matériau partagés (créés paresseusement).
+  private blobGeo: THREE.CircleGeometry | null = null;
+  private blobMat: THREE.MeshBasicMaterial | null = null;
+
+  private blobShadowGeo(): THREE.CircleGeometry {
+    if (!this.blobGeo) {
+      this.blobGeo = new THREE.CircleGeometry(1, 24);
+      this.blobGeo.rotateX(-Math.PI / 2); // à plat (plan horizontal)
+    }
+    return this.blobGeo;
+  }
+
+  private blobShadowMat(): THREE.MeshBasicMaterial {
+    if (!this.blobMat) {
+      // Dégradé radial doux : noir au centre → transparent au bord (classique RTS)
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const ctx = c.getContext('2d')!;
+      const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+      grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+      grad.addColorStop(0.55, 'rgba(0,0,0,0.30)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 128, 128);
+      const tex = new THREE.CanvasTexture(c);
+      this.blobMat = new THREE.MeshBasicMaterial({
+        map: tex, transparent: true, depthWrite: false,
+      });
+    }
+    return this.blobMat;
+  }
+
   // Ghost 3D teinté vert : un clone du modèle par position valide.
   // liftY : renvoie la hauteur du sol (null = laisser la transform du meta).
   private buildGhostPreview(entry: { group: THREE.Group; tileW: number; tileH: number },
@@ -1237,6 +1342,11 @@ export class ThreeRenderer implements IRenderer {
       if (obj instanceof THREE.Mesh) toRemove.push(obj);
     });
     for (const m of toRemove) {
+      // Les blobs partagent géométrie + matériau statiques → les retirer sans dispose.
+      if (m.userData.sharedBlob) {
+        m.parent?.remove(m);
+        continue;
+      }
       m.geometry.dispose();
       const mats = Array.isArray(m.material) ? m.material : [m.material];
       for (const mt of mats) mt.dispose();
