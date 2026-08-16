@@ -18,7 +18,13 @@ function makeTiles(w: number, h: number): Tile[][] {
 }
 
 function makeEngine(): GameEngine {
-  const rendererStub = { renderBuilding: () => {} };
+  const rendererStub = {
+    renderBuilding: () => {},
+    clear: () => {},
+    renderWorld: () => {},
+    setPortPreview: () => {},
+    setGroundPreview: () => {},
+  };
   const engine = new GameEngine(
     rendererStub as never, null as never, null as never, null as never,
   );

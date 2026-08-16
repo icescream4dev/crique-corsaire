@@ -199,11 +199,10 @@ export class GameEngine {
       }
     }
     this.state.buildings.set(instance.id, instance);
-    for (let dy = 0; dy < h; dy++) {
-      for (let dx = 0; dx < w; dx++) {
-        this.renderer.renderBuilding(this.state.island.tiles[y + dy]![x + dx]!);
-      }
-    }
+    // Reconstruire le monde : le terrain doit être REDESSINÉ pour appliquer la
+    // fondation aplatie (flattening) sous le bâtiment au sol — un simple
+    // renderBuilding() laisserait le terrain en pente sous le modèle.
+    this.buildWorld();
     return instance;
   }
 
