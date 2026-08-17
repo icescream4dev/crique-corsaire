@@ -1041,20 +1041,30 @@ export class ThreeRenderer implements IRenderer {
 
           // Ombre du soleil SUR l'eau : projeter la position monde dans
           // l'espace de la lumière et comparer à la shadow map. Le ponton
-          // (castShadow) bloque le soleil → ombre nette à la surface, comme
-          // un vrai ponton. L'ombre reste collée à la surface (jamais sous
-          // le sol) quelle que soit la profondeur du fond.
+          // (castShadow) bloque le soleil → ombre à la surface, comme un vrai
+          // ponton. L'ombre reste collée à la surface (jamais sous le sol)
+          // quelle que soit la profondeur du fond.
+          // PCF doux 3×3 : le bord de l'ombre est progressif → l'ondulation des
+          // vagues (vWorldPos.y) déplace visiblement l'ombre, et l'ombre des
+          // poteaux touche leur base à la surface (l'écume).
           vec4 shC = sunShadowMatrix * vec4(vWorldPos, 1.0);
           vec3 shNdc = shC.xyz / shC.w;
           vec2 shUv = shNdc.xy * 0.5 + 0.5;
           float inShadow = 0.0;
           if (shUv.x >= 0.0 && shUv.x <= 1.0 && shUv.y >= 0.0 && shUv.y <= 1.0
               && shNdc.z >= -1.0 && shNdc.z <= 1.0) {
-            float lightDepth = texture2D(sunShadowMap, shUv).r;      // [0,1] depuis la lumière
-            float fragDepth = shNdc.z * 0.5 + 0.5;                   // NDC → [0,1]
-            inShadow = step(fragDepth - sunShadowBias, lightDepth);
+            float fragDepth = shNdc.z * 0.5 + 0.5;   // NDC → [0,1]
+            float texel = 1.0 / 2048.0;              // taille d'un texel de la shadow map
+            float shadowSum = 0.0;
+            for (int dy = -1; dy <= 1; dy++) {
+              for (int dx = -1; dx <= 1; dx++) {
+                float lightDepth = texture2D(sunShadowMap, shUv + vec2(float(dx), float(dy)) * texel).r;
+                shadowSum += step(fragDepth - sunShadowBias, lightDepth);
+              }
+            }
+            inShadow = shadowSum / 9.0;
           }
-          // Assombrir la surface de l'eau dans l'ombre (doucement)
+          // Assombrir la surface de l'eau dans l'ombre (doucement, progressif)
           color *= 1.0 - inShadow * 0.45;
 
           // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
