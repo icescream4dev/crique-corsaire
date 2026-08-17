@@ -1299,6 +1299,12 @@ export class ThreeRenderer implements IRenderer {
     this.onCameraChange = fn;
   }
 
+  /** Tuile au CENTRE du viewport (centre de l'écran, pas de la grille). */
+  tileAtViewCenter(): { x: number; y: number } | null {
+    const rect = this.ct.getBoundingClientRect();
+    return this.getTileAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }
+
   /** Affiche le ghost du bâtiment à (gridX, gridZ), vert (ok) ou rouge (ko). */
   setGhostPreview(buildingId: string | null, gridX: number, gridZ: number, ok: boolean): void {
     this.clearPreview(this.ghostPreview);

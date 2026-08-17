@@ -24,6 +24,7 @@ function makeEngine(): GameEngine {
     renderWorld: () => {},
     setGhostPreview: () => {},
     setCameraChangeListener: () => {},
+    tileAtViewCenter: () => ({ x: 3, y: 3 }),
     platformDisplacement: () => 0,
   };
   const engine = new GameEngine(

@@ -23,6 +23,8 @@ export interface IRenderer {
   platformDisplacement(defId: string, gridX: number, gridY: number): number;
   /** Affiche / retire la surbrillance verte du ponton sur les tuiles données (mode placement). */
   setGhostPreview(buildingId: string | null, gridX: number, gridZ: number, ok: boolean): void;
+  /** Tuile au centre du viewport (position initiale du ghost). */
+  tileAtViewCenter(): { x: number; y: number } | null;
   /** Callback appelé à chaque pan/zoom (recalcul du ghost sous le curseur). */
   setCameraChangeListener(fn: () => void): void;
 }

@@ -104,18 +104,19 @@ export class GameEngine {
     this.updatePlacementPreview();
   }
 
-  /** Affiche le ghost UNIQUE au centre de la carte (état initial / sélection). */
+  /** Affiche le ghost UNIQUE au centre de l'écran (état initial / sélection). */
   private updatePlacementPreview(): void {
     const sel = this.selectedBuilding;
     if (!sel) {
       this.renderer.setGhostPreview(null, 0, 0, false);
       return;
     }
-    const w = this.state.island.width;
-    const h = this.state.island.height;
-    const cx = Math.floor(w / 2);
-    const cz = Math.floor(h / 2);
-    this.renderer.setGhostPreview(sel, cx, cz, this.canPlace(sel, cx, cz));
+    // Centre du POINT DE VUE (viewport), pas de la grille — la caméra peut
+    // être panoramiquée. Repli sur le centre de la carte si hors grille.
+    const tile = this.renderer.tileAtViewCenter();
+    const gx = tile ? tile.x : Math.floor(this.state.island.width / 2);
+    const gz = tile ? tile.y : Math.floor(this.state.island.height / 2);
+    this.renderer.setGhostPreview(sel, gx, gz, this.canPlace(sel, gx, gz));
   }
 
   /** Recalcule le ghost sous le curseur (mousemove, pan, zoom). */
