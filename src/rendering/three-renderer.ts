@@ -340,8 +340,9 @@ export class ThreeRenderer implements IRenderer {
           ]);
           if (!metaResp.ok) continue;
           const meta = await metaResp.json() as { transform: BuildingTransformMeta; tile_width?: number; tile_height?: number; platform_min_height?: number; platform_max_height?: number };
+          const group = this.prepareGlb(gltf.scene, meta.transform);
           this.buildingModels.set(id, {
-            group: this.prepareGlb(gltf.scene, meta.transform),
+            group,
             tileW: meta.tile_width ?? 1,
             tileH: meta.tile_height ?? 1,
             minPlatformHeight: meta.platform_min_height ?? 0.02,
@@ -408,6 +409,7 @@ export class ThreeRenderer implements IRenderer {
       // curseur au pan/zoom même si la souris n'a pas bougé.
       this.lastPointerX = e.clientX;
       this.lastPointerY = e.clientY;
+      this.lastPointerWasTouch = false;
       if (!this.drag) return;
       panToWorld(e.clientX - this.dsx, e.clientY - this.dsy);
       this.dsx = e.clientX; this.dsy = e.clientY;
@@ -417,6 +419,7 @@ export class ThreeRenderer implements IRenderer {
     c.addEventListener('touchstart', (e: TouchEvent) => {
       this.lastPointerX = e.touches[0].clientX;
       this.lastPointerY = e.touches[0].clientY;
+      this.lastPointerWasTouch = true;
       if (e.touches.length === 1) {
         this.drag = true;
         this.dsx = e.touches[0].clientX;
@@ -435,6 +438,7 @@ export class ThreeRenderer implements IRenderer {
       e.preventDefault();
       this.lastPointerX = e.touches[0].clientX;
       this.lastPointerY = e.touches[0].clientY;
+      this.lastPointerWasTouch = true;
       if (e.touches.length === 1 && this.drag) {
         panToWorld(
           e.touches[0].clientX - this.dsx,
@@ -523,8 +527,10 @@ export class ThreeRenderer implements IRenderer {
       (s.camera as THREE.OrthographicCamera).updateProjectionMatrix();
     }
 
-    // Notifier le moteur (pan/zoom) pour recalculer le ghost sous le curseur
-    this.onCameraChange?.(this.lastPointerX, this.lastPointerY);
+    // Notifier le moteur (pan/zoom) pour recalculer le ghost : souris → sous
+    // le curseur ; touch → au centre de l'écran.
+    const p = this.pointerForCameraChange();
+    this.onCameraChange?.(p.x, p.y);
   }
 
   // --- IRenderer: centerOnWorld ---
@@ -1304,9 +1310,22 @@ export class ThreeRenderer implements IRenderer {
   private onCameraChange: ((clientX: number, clientY: number) => void) | null = null;
   private lastPointerX = 0;
   private lastPointerY = 0;
+  private lastPointerWasTouch = false;
 
   setCameraChangeListener(fn: (clientX: number, clientY: number) => void): void {
     this.onCameraChange = fn;
+  }
+
+  /** Position du pointeur à utiliser pour le recalcul après pan/zoom :
+   * souris → la position réelle du curseur ; touch → le CENTRE de l'écran
+   * (sur mobile le doigt bouge pendant le pan, il ne marque pas le centre
+   * du point de vue — Julien). */
+  private pointerForCameraChange(): { x: number; y: number } {
+    if (this.lastPointerWasTouch) {
+      const rect = this.ct.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+    return { x: this.lastPointerX, y: this.lastPointerY };
   }
 
   /** Tuile au CENTRE du viewport (centre de l'écran, pas de la grille). */
@@ -1331,13 +1350,28 @@ export class ThreeRenderer implements IRenderer {
     inst.traverse((o) => { if (o instanceof THREE.Mesh) o.material = ghostMat; });
     inst.position.x += fcx;
     inst.position.z += fcz;
-    // Au sol : remonter sur la hauteur lissée ; pilotis : la transform du meta
-    // pose déjà la base (comme le bâtiment réel).
-    const defStilts = buildingId === 'port';
-    if (!defStilts) {
-      const gy = this.sampleGroundHeight(fcx, fcz);
-      inst.position.y += (Number.isFinite(gy) ? gy : 0) + 0.02;
-    }
+    // TOUJOURS poser le ghost sur la VRAIE hauteur lissée du terrain (même
+    // pour le ponton) : la transform du meta poserait la base sous l'eau /
+    // sous la montagne → ghost invisible. Le ghost est une prévisualisation,
+    // il doit être visible posé sur le sol partout (vert ou rouge), comme
+    // n'importe quel bâtiment (Julien).
+    const gy = this.sampleGroundHeight(fcx, fcz);
+    const groundY = Number.isFinite(gy) ? gy : 0;
+    // Mesurer la base RÉELLE du clone (pilotis compris, scale + offsets
+    // internes) puis remonter pour qu'elle repose sur le terrain + 0.02.
+    inst.updateMatrixWorld(true);
+    let baseYMin = 0;
+    inst.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        const m = o.matrixWorld.elements;
+        const p = (o.geometry as THREE.BufferGeometry).attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          const wy = m[1] * p.getX(i) + m[5] * p.getY(i) + m[9] * p.getZ(i) + m[13];
+          if (wy < baseYMin) baseYMin = wy;
+        }
+      }
+    });
+    inst.position.y += groundY + 0.02 - baseYMin;
     const group = new THREE.Group();
     group.add(inst);
     group.renderOrder = 2; // par-dessus le terrain
