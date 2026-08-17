@@ -555,6 +555,14 @@ export class ThreeRenderer implements IRenderer {
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
 
+    // Mettre à jour la shadow map du soleil pour l'ombre SUR l'eau (le rendu
+    // ci-dessus a généré la shadow map → on la passe au water shader).
+    if (this.waterMesh && this.sunLight.shadow.map) {
+      const wm = this.waterMesh.material as THREE.ShaderMaterial;
+      wm.uniforms.sunShadowMap.value = this.sunLight.shadow.map.texture;
+      wm.uniforms.sunShadowMatrix.value.copy(this.sunLight.shadow.matrix);
+    }
+
     // Étape 2 : rendre avec l'eau + ombre nuage + nuages + post-processing
     this.cloudTime += dt * 0.001;
     if (this.waterMesh) {
@@ -875,6 +883,11 @@ export class ThreeRenderer implements IRenderer {
         uFar: { value: this.camera.far },
         uCloudHeight: { value: CLOUD_HEIGHT },
         uCameraPos: { value: this.camera.position.clone() },
+        // Ombre du soleil projetée SUR l'eau : la shadow map du soleil +
+        // sa matrice (le ponton la bloque → ombre à la surface, réaliste).
+        sunShadowMap: { value: null as THREE.Texture | null },
+        sunShadowMatrix: { value: new THREE.Matrix4() },
+        sunShadowBias: { value: 0.002 },
       },
       vertexShader: /* glsl */ `
         varying vec3 vWorldPos;
@@ -913,6 +926,9 @@ export class ThreeRenderer implements IRenderer {
         uniform float uCloudHeight;
         uniform vec3 uCameraPos;
         uniform float time;
+        uniform sampler2D sunShadowMap;
+        uniform mat4 sunShadowMatrix;
+        uniform float sunShadowBias;
 
         varying vec3 vWorldPos;
         varying vec4 vScreenPos;
@@ -1022,6 +1038,24 @@ export class ThreeRenderer implements IRenderer {
 
           // Palette shift : remplacer par la couleur plus claire
           color = mix(color, midColor, fleckMask * openSeaMask * 0.6);
+
+          // Ombre du soleil SUR l'eau : projeter la position monde dans
+          // l'espace de la lumière et comparer à la shadow map. Le ponton
+          // (castShadow) bloque le soleil → ombre nette à la surface, comme
+          // un vrai ponton. L'ombre reste collée à la surface (jamais sous
+          // le sol) quelle que soit la profondeur du fond.
+          vec4 shC = sunShadowMatrix * vec4(vWorldPos, 1.0);
+          vec3 shNdc = shC.xyz / shC.w;
+          vec2 shUv = shNdc.xy * 0.5 + 0.5;
+          float inShadow = 0.0;
+          if (shUv.x >= 0.0 && shUv.x <= 1.0 && shUv.y >= 0.0 && shUv.y <= 1.0
+              && shNdc.z >= -1.0 && shNdc.z <= 1.0) {
+            float lightDepth = texture2D(sunShadowMap, shUv).r;      // [0,1] depuis la lumière
+            float fragDepth = shNdc.z * 0.5 + 0.5;                   // NDC → [0,1]
+            inShadow = step(fragDepth - sunShadowBias, lightDepth);
+          }
+          // Assombrir la surface de l'eau dans l'ombre (doucement)
+          color *= 1.0 - inShadow * 0.45;
 
           // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
           
@@ -1191,20 +1225,10 @@ export class ThreeRenderer implements IRenderer {
         if (isStilts) {
           // Sur l'eau (pilotis) : la transform du meta.json pose déjà Y min à
           // −0.049 (base des pilotis sous la surface) → aucun offset vertical.
-          // Ombre : PAS d'ombre physique (elle tombe sur la plateforme SOUS
-          // l'eau, à −0,55 m → décalée par la réfraction et étirée sur les
-          // pentes → « l'ombre passe sous le sol », Julien). À la place un
-          // blob shadow posé sur la SURFACE de l'eau (Y=0.02) : il colle par
-          // construction et ne peut jamais passer sous le sol.
+          // Ombre physique CONSERVÉE : le shader de l'eau échantillonne la
+          // shadow map du soleil → l'ombre du ponton se projette sur la
+          // SURFACE de l'eau (jamais sous le sol), pas de blob.
           inst.position.y += 0.0;
-          inst.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = false; });
-          const blobR = (fw > fh ? fw : fh) * TS * 0.62;
-          const blob = new THREE.Mesh(this.blobShadowGeo(), this.blobShadowMat());
-          blob.position.set(fcx, 0.02, fcz);
-          blob.scale.setScalar(blobR);
-          blob.renderOrder = 0.5; // sous le bâtiment, au-dessus de l'eau
-          blob.userData.sharedBlob = true; // ressources partagées → pas de dispose en clear()
-          this.scene.add(blob);
         } else {
           // Au sol : la transform pose Y min monde = 0 ; on remonte au niveau
           // du terrain (+ léger enfoncement pour ancrer le modèle dans le sol).
@@ -1390,38 +1414,6 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(group);
   }
 
-  // Blob shadow — géométrie + matériau partagés (créés paresseusement).
-  private blobGeo: THREE.CircleGeometry | null = null;
-  private blobMat: THREE.MeshBasicMaterial | null = null;
-
-  private blobShadowGeo(): THREE.CircleGeometry {
-    if (!this.blobGeo) {
-      this.blobGeo = new THREE.CircleGeometry(1, 24);
-      this.blobGeo.rotateX(-Math.PI / 2); // à plat (plan horizontal)
-    }
-    return this.blobGeo;
-  }
-
-  private blobShadowMat(): THREE.MeshBasicMaterial {
-    if (!this.blobMat) {
-      // Dégradé radial doux : noir au centre → transparent au bord (classique RTS)
-      const c = document.createElement('canvas');
-      c.width = c.height = 128;
-      const ctx = c.getContext('2d')!;
-      const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
-      grad.addColorStop(0, 'rgba(0,0,0,0.55)');
-      grad.addColorStop(0.55, 'rgba(0,0,0,0.30)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 128, 128);
-      const tex = new THREE.CanvasTexture(c);
-      this.blobMat = new THREE.MeshBasicMaterial({
-        map: tex, transparent: true, depthWrite: false,
-      });
-    }
-    return this.blobMat;
-  }
-
   // Nettoie un groupe de preview : dispose le matériau ghost (jetable) et les
   // géométries propres (quad), jamais les géométries partagées du modèle.
   private clearPreview(g: THREE.Group | null): void {
@@ -1447,11 +1439,6 @@ export class ThreeRenderer implements IRenderer {
       if (obj instanceof THREE.Mesh) toRemove.push(obj);
     });
     for (const m of toRemove) {
-      // Les blobs partagent géométrie + matériau statiques → les retirer sans dispose.
-      if (m.userData.sharedBlob) {
-        m.parent?.remove(m);
-        continue;
-      }
       m.geometry.dispose();
       const mats = Array.isArray(m.material) ? m.material : [m.material];
       for (const mt of mats) mt.dispose();
