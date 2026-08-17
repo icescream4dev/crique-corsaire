@@ -126,7 +126,7 @@ export class ThreeRenderer implements IRenderer {
   private sceneRT!: THREE.WebGLRenderTarget; // scene pré-rendue pour l'eau
   // Modèles 3D chargés via le registre /assets/registry.json (clé = id bâtiment)
   // + taille d'empreinte en tuiles (pour centrer sur le footprint multi-tuiles)
-  private buildingModels = new Map<string, { group: THREE.Group; tileW: number; tileH: number; minPlatformHeight: number }>();
+  private buildingModels = new Map<string, { group: THREE.Group; tileW: number; tileH: number; minPlatformHeight: number; maxPlatformHeight: number }>();
   // Surbrillance verte des tuiles valides (mode placement) — port (eau) et sol.
   private groundPreview: THREE.Group | null = null;
   private portPreview: THREE.Group | null = null;
@@ -339,12 +339,13 @@ export class ThreeRenderer implements IRenderer {
             new GLTFLoader().loadAsync(entry.glb),
           ]);
           if (!metaResp.ok) continue;
-          const meta = await metaResp.json() as { transform: BuildingTransformMeta; tile_width?: number; tile_height?: number; platform_min_height?: number };
+          const meta = await metaResp.json() as { transform: BuildingTransformMeta; tile_width?: number; tile_height?: number; platform_min_height?: number; platform_max_height?: number };
           this.buildingModels.set(id, {
             group: this.prepareGlb(gltf.scene, meta.transform),
             tileW: meta.tile_width ?? 1,
             tileH: meta.tile_height ?? 1,
             minPlatformHeight: meta.platform_min_height ?? 0.02,
+            maxPlatformHeight: meta.platform_max_height ?? Infinity,
           });
         } catch {
           // bâtiment ignoré : le rendu box de secours prend le relais
@@ -681,9 +682,14 @@ export class ThreeRenderer implements IRenderer {
           }
         }
         const meanH = sumH / nH;
-        // 2. garde-fou : minimum de plateforme (paramètre du bâtiment)
+        // 2. garde-fou : la plateforme reste dans [minPlatformHeight,
+        //    maxPlatformHeight] (paramètres par bâtiment). Le min évite un
+        //    fond trop profond (repair 0.03 = 0,3 m ; port −0.04 = −0,4 m,
+        //    bas des poteaux), le max garantit qu'il reste de l'eau pour un
+        //    ponton (port −0.005 = −0,05 m).
         const minH = entry?.minPlatformHeight ?? 0.02;
-        const hFlat = Math.max(meanH, minH);
+        const maxH = entry?.maxPlatformHeight ?? Infinity;
+        const hFlat = Math.min(Math.max(meanH, minH), maxH);
         // 3. zone plane + rampe courte (marge 1 tuile).
         //    Astuce Julien : la plateforme n'est PAS parfaitement horizontale —
         //    elle conserve 1 % de la pente d'origine des sommets (dans le même
