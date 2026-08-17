@@ -114,6 +114,7 @@ export class ThreeRenderer implements IRenderer {
   private blitScene!: THREE.Scene;
   private blitQuad!: THREE.Mesh;
   private sunLight!: THREE.DirectionalLight;
+  private sunWaterLight!: THREE.DirectionalLight;
 
   // Terrain
   private terrainMesh: THREE.Mesh | null = null;
@@ -179,9 +180,13 @@ export class ThreeRenderer implements IRenderer {
     // Lumières
     const ambient = new THREE.AmbientLight(0x8899bb, 0.5); // réduit car les ombres ajoutent du contraste
 
-    // Soleil directionnel avec ombres
+    // Soleil directionnel avec ombres — layer 0 : n'éclaire que le TERRAIN et
+    // les bâtiments au sol (ombre du repaire). Le ponton est sur layer 1 → il
+    // n'apparaît PAS dans cette shadow map → son ombre ne tombe plus sur le
+    // fond sous l'eau (bug « ombre sous le sol »).
     const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
     sun.position.set(40, 50, -10); // nord-ouest, haut → ombres vers sud-est
+    sun.layers.set(0);
     sun.castShadow = true;
     sun.shadow.mapSize.width = 2048;
     sun.shadow.mapSize.height = 2048;
@@ -197,6 +202,31 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(ambient, sun);
     this.scene.add(sun.target); // nécessaire pour que Three.js mette à jour la position
     this.sunLight = sun;
+
+    // Second soleil — layer 1 : n'éclaire QUE le ponton (layer 1). Sa shadow
+    // map ne contient QUE le ponton → le water shader l'échantillonne pour
+    // projeter l'ombre du ponton SUR la surface de l'eau (jamais sous le sol).
+    const sunWater = new THREE.DirectionalLight(0xffeedd, 1.5);
+    sunWater.position.set(40, 50, -10);
+    sunWater.layers.set(1);
+    sunWater.castShadow = true;
+    sunWater.shadow.mapSize.width = 2048;
+    sunWater.shadow.mapSize.height = 2048;
+    sunWater.shadow.camera.near = 0.5;
+    sunWater.shadow.camera.far = 150;
+    sunWater.shadow.camera.left = -10;
+    sunWater.shadow.camera.right = 10;
+    sunWater.shadow.camera.top = 10;
+    sunWater.shadow.camera.bottom = -10;
+    sunWater.shadow.bias = -0.0005;
+    sunWater.shadow.normalBias = 0.02;
+
+    this.scene.add(sunWater);
+    this.scene.add(sunWater.target);
+    this.sunWaterLight = sunWater;
+
+    // La caméra voit les deux layers (terrain layer 0 + ponton layer 1)
+    this.camera.layers.enable(1);
 
     // RenderTarget pour la scène opaque (terrain + bâtiments) → lu par le water shader
     this.sceneRT = new THREE.WebGLRenderTarget(container.clientWidth, container.clientHeight, {
@@ -527,6 +557,21 @@ export class ThreeRenderer implements IRenderer {
       (s.camera as THREE.OrthographicCamera).updateProjectionMatrix();
     }
 
+    // Shadow camera du soleil « eau » (ponton layer 1) : sa position est
+    // centrée sur le PONTON à la pose (renderBuilding) pour que sa shadow
+    // map couvre le modèle. On ne touche ici qu'à la projection (zoom).
+    if (this.sunWaterLight) {
+      const s = this.sunWaterLight.shadow;
+      const sc = s.camera as THREE.OrthographicCamera;
+      if (s.camera.left === -40 && s.camera.right === 40) {
+        // pas encore recentrée sur un ponton → on suit le centre de la vue
+        const offset = new THREE.Vector3(40, 50, -10);
+        this.sunWaterLight.position.copy(this.camTarget).add(offset);
+        this.sunWaterLight.target.position.copy(this.camTarget);
+      }
+      sc.updateProjectionMatrix();
+    }
+
     // Notifier le moteur (pan/zoom) pour recalculer le ghost : souris → sous
     // le curseur ; touch → au centre de l'écran.
     const p = this.pointerForCameraChange();
@@ -555,12 +600,14 @@ export class ThreeRenderer implements IRenderer {
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
 
-    // Mettre à jour la shadow map du soleil pour l'ombre SUR l'eau (le rendu
-    // ci-dessus a généré la shadow map → on la passe au water shader).
-    if (this.waterMesh && this.sunLight.shadow.map) {
+    // Mettre à jour la shadow map du soleil « eau » pour l'ombre SUR l'eau
+    // (shadow map du ponton layer 1, générée par le rendu ci-dessus).
+    if (this.waterMesh && this.sunWaterLight.shadow.map) {
       const wm = this.waterMesh.material as THREE.ShaderMaterial;
-      wm.uniforms.sunShadowMap.value = this.sunLight.shadow.map.texture;
-      wm.uniforms.sunShadowMatrix.value.copy(this.sunLight.shadow.matrix);
+      // depthTexture = profondeur BRUTE (échantillonnable en sampler2D) ;
+      // .texture serait en mode comparaison PCF (sampler2DShadow).
+      wm.uniforms.sunShadowMap.value = this.sunWaterLight.shadow.map.depthTexture;
+      wm.uniforms.sunShadowMatrix.value.copy(this.sunWaterLight.shadow.matrix);
     }
 
     // Étape 2 : rendre avec l'eau + ombre nuage + nuages + post-processing
@@ -1040,26 +1087,29 @@ export class ThreeRenderer implements IRenderer {
           color = mix(color, midColor, fleckMask * openSeaMask * 0.6);
 
           // Ombre du soleil SUR l'eau : projeter la position monde dans
-          // l'espace de la lumière et comparer à la shadow map. Le ponton
-          // (castShadow) bloque le soleil → ombre à la surface, comme un vrai
-          // ponton. L'ombre reste collée à la surface (jamais sous le sol)
-          // quelle que soit la profondeur du fond.
-          // PCF doux 3×3 : le bord de l'ombre est progressif → l'ondulation des
-          // vagues (vWorldPos.y) déplace visiblement l'ombre, et l'ombre des
-          // poteaux touche leur base à la surface (l'écume).
+          // l'espace de la lumière et comparer à la shadow map du ponton
+          // (layer 1, ne contient QUE le ponton). Le ponton bloque le soleil
+          // → ombre à la surface, comme un vrai ponton. L'ombre reste collée
+          // à la surface (jamais sous le sol) : la shadow map ne contient pas
+          // le fond, donc rien ne peut projeter une ombre « sous l'eau ».
+          // PCF doux 3×3 : bord progressif, l'ondulation des vagues déplace
+          // visiblement l'ombre, et l'ombre des poteaux touche leur base à la
+          // surface (l'écume).
           vec4 shC = sunShadowMatrix * vec4(vWorldPos, 1.0);
           vec3 shNdc = shC.xyz / shC.w;
           vec2 shUv = shNdc.xy * 0.5 + 0.5;
           float inShadow = 0.0;
           if (shUv.x >= 0.0 && shUv.x <= 1.0 && shUv.y >= 0.0 && shUv.y <= 1.0
               && shNdc.z >= -1.0 && shNdc.z <= 1.0) {
-            float fragDepth = shNdc.z * 0.5 + 0.5;   // NDC → [0,1]
+            float fragDepth = shNdc.z * 0.5 + 0.5;   // profondeur du point d'eau [0,1]
             float texel = 1.0 / 2048.0;              // taille d'un texel de la shadow map
             float shadowSum = 0.0;
             for (int dy = -1; dy <= 1; dy++) {
               for (int dx = -1; dx <= 1; dx++) {
                 float lightDepth = texture2D(sunShadowMap, shUv + vec2(float(dx), float(dy)) * texel).r;
-                shadowSum += step(fragDepth - sunShadowBias, lightDepth);
+                // Dans l'ombre si le ponton (lightDepth) est PLUS PROCHE de la
+                // lumière que le point d'eau (fragDepth)
+                shadowSum += step(lightDepth + sunShadowBias, fragDepth);
               }
             }
             inShadow = shadowSum / 9.0;
@@ -1235,10 +1285,38 @@ export class ThreeRenderer implements IRenderer {
         if (isStilts) {
           // Sur l'eau (pilotis) : la transform du meta.json pose déjà Y min à
           // −0.049 (base des pilotis sous la surface) → aucun offset vertical.
-          // Ombre physique CONSERVÉE : le shader de l'eau échantillonne la
-          // shadow map du soleil → l'ombre du ponton se projette sur la
-          // SURFACE de l'eau (jamais sous le sol), pas de blob.
+          // Layer 1 : le ponton n'est éclairé que par sunWaterLight (sa shadow
+          // map ne contient QUE le ponton → ombre projetée sur l'eau par le
+          // water shader, jamais sur le fond sous l'eau).
           inst.position.y += 0.0;
+          inst.traverse((o) => { if (o instanceof THREE.Mesh) o.layers.set(1); });
+          // Centrer la shadow camera de sunWaterLight sur le PONTON (pas le
+          // centre de la carte) : sa shadow map doit couvrir le ponton pour
+          // projeter son ombre sur l'eau.
+          this.sunWaterLight.target.position.set(fcx, 0, fcz);
+          const s = this.sunWaterLight.shadow;
+          const sc = s.camera as THREE.OrthographicCamera;
+          const couv = 2.5; // couvrir ~2,5 u autour du ponton (petit modèle)
+          s.camera.left = -couv;
+          s.camera.right = couv;
+          s.camera.top = couv;
+          s.camera.bottom = -couv;
+          sc.updateProjectionMatrix();
+          // Position de la lumière : direction du soleil depuis le ponton
+          const offset = new THREE.Vector3(40, 50, -10).normalize().multiplyScalar(80);
+          this.sunWaterLight.position.copy(this.sunWaterLight.target.position).add(offset);
+          // Plan FAR aligné sur la direction de la lumière, positionné à la
+          // SURFACE de l'eau (Y≈0) : tout ce qui est plus loin que la surface
+          // (les pieds des poteaux, immergés à −0,06 u) est COUPÉ de la
+          // shadow map → il ne projette pas d'ombre sur l'eau (la lumière est
+          // bloquée par la surface avant de les atteindre). Résultat :
+          // l'ombre des poteaux part de leur base à la surface (l'écume),
+          // pas d'un point sous l'eau.
+          const dir = offset.clone().normalize();
+          const distSurface = (this.sunWaterLight.position.y - 0.0) / dir.y;
+          s.camera.near = 0.5;
+          s.camera.far = Math.max(1, distSurface);
+          sc.updateProjectionMatrix();
         } else {
           // Au sol : la transform pose Y min monde = 0 ; on remonte au niveau
           // du terrain (+ léger enfoncement pour ancrer le modèle dans le sol).
@@ -1392,6 +1470,10 @@ export class ThreeRenderer implements IRenderer {
     });
     const inst = entry.group.clone();
     inst.traverse((o) => { if (o instanceof THREE.Mesh) o.material = ghostMat; });
+    // Ghost du ponton : layer 1 (visible par la caméra qui voit les 2 layers)
+    if (buildingId === 'port') {
+      inst.traverse((o) => { if (o instanceof THREE.Mesh) o.layers.set(1); });
+    }
     inst.position.x += fcx;
     inst.position.z += fcz;
     // TOUJOURS poser le ghost sur la VRAIE hauteur lissée du terrain (même
