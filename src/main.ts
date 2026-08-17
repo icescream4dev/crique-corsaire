@@ -42,13 +42,13 @@ async function main() {
       });
 
       // Ghost unique : suit le curseur, recalculé au mousemove + pan/zoom
-      let lastMouse = { x: 0, y: 0 };
       canvas.addEventListener('mousemove', (e: MouseEvent) => {
-        lastMouse = { x: e.clientX, y: e.clientY };
         engine.updateGhostAt(e.clientX, e.clientY);
       });
-      renderer.setCameraChangeListener(() => {
-        if (engine.selectedBuilding) engine.updateGhostAt(lastMouse.x, lastMouse.y);
+      // Le renderer mémorise la position réelle du pointeur (souris + touch)
+      // et la passe au pan/zoom → le ghost suit même sans mouvement de souris.
+      renderer.setCameraChangeListener((x, y) => {
+        if (engine.selectedBuilding) engine.updateGhostAt(x, y);
       });
     }
 

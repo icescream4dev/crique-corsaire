@@ -26,7 +26,7 @@ export interface IRenderer {
   /** Tuile au centre du viewport (position initiale du ghost). */
   tileAtViewCenter(): { x: number; y: number } | null;
   /** Callback appelé à chaque pan/zoom (recalcul du ghost sous le curseur). */
-  setCameraChangeListener(fn: () => void): void;
+  setCameraChangeListener(fn: (clientX: number, clientY: number) => void): void;
 }
 
 /** Abstraction de la persistence (sauvegarde/chargement). */

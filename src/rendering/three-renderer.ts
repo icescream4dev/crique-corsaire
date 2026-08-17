@@ -404,6 +404,10 @@ export class ThreeRenderer implements IRenderer {
     });
     window.addEventListener('mouseup', () => { this.drag = false; });
     window.addEventListener('mousemove', (e: MouseEvent) => {
+      // Toujours mémoriser le pointeur (même hors drag) : le ghost suit le
+      // curseur au pan/zoom même si la souris n'a pas bougé.
+      this.lastPointerX = e.clientX;
+      this.lastPointerY = e.clientY;
       if (!this.drag) return;
       panToWorld(e.clientX - this.dsx, e.clientY - this.dsy);
       this.dsx = e.clientX; this.dsy = e.clientY;
@@ -411,6 +415,8 @@ export class ThreeRenderer implements IRenderer {
 
     // --- Touch : 1 doigt = pan, 2 doigts = pinch zoom ---
     c.addEventListener('touchstart', (e: TouchEvent) => {
+      this.lastPointerX = e.touches[0].clientX;
+      this.lastPointerY = e.touches[0].clientY;
       if (e.touches.length === 1) {
         this.drag = true;
         this.dsx = e.touches[0].clientX;
@@ -427,6 +433,8 @@ export class ThreeRenderer implements IRenderer {
 
     c.addEventListener('touchmove', (e: TouchEvent) => {
       e.preventDefault();
+      this.lastPointerX = e.touches[0].clientX;
+      this.lastPointerY = e.touches[0].clientY;
       if (e.touches.length === 1 && this.drag) {
         panToWorld(
           e.touches[0].clientX - this.dsx,
@@ -516,7 +524,7 @@ export class ThreeRenderer implements IRenderer {
     }
 
     // Notifier le moteur (pan/zoom) pour recalculer le ghost sous le curseur
-    this.onCameraChange?.();
+    this.onCameraChange?.(this.lastPointerX, this.lastPointerY);
   }
 
   // --- IRenderer: centerOnWorld ---
@@ -1293,9 +1301,11 @@ export class ThreeRenderer implements IRenderer {
   // Recalculé au pan/zoom via onCameraChange (callback déclenché dans updateCamera).
 
   /** Callback appelé à chaque pan/zoom (pour recalculer la tuile sous le curseur). */
-  private onCameraChange: (() => void) | null = null;
+  private onCameraChange: ((clientX: number, clientY: number) => void) | null = null;
+  private lastPointerX = 0;
+  private lastPointerY = 0;
 
-  setCameraChangeListener(fn: () => void): void {
+  setCameraChangeListener(fn: (clientX: number, clientY: number) => void): void {
     this.onCameraChange = fn;
   }
 
