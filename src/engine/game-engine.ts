@@ -143,6 +143,13 @@ export class GameEngine {
     const w = def?.tileWidth ?? 1;
     const h = def?.tileHeight ?? 1;
 
+    // Règle de pose (Julien) : si la création de la plateforme contraint à
+    // modifier un point du terrain de plus de 5 m (0,5 u), la pose est KO —
+    // pas de terrassement de falaise sous un bâtiment.
+    const MAX_PLATFORM_DISP = 0.5; // 5 m
+    const disp = this.renderer.platformDisplacement(defId, x, y);
+    if (disp > MAX_PLATFORM_DISP) return false;
+
     // Empreinte w×h : TOUTES les tuiles du footprint doivent être valides.
     // (x, y) = coin haut-gauche du footprint (convention ancre).
     for (let dy = 0; dy < h; dy++) {

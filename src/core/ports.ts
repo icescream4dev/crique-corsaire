@@ -19,6 +19,8 @@ export interface IRenderer {
   getTileAt(screenX: number, screenY: number): { x: number; y: number } | null;
   /** Hauteur lissée du terrain au point monde (wx, wz), interpolation bilinéaire (NaN hors carte). */
   sampleGroundHeight(wx: number, wz: number): number;
+  /** Déplacement vertical max (u) qu'imposerait la plateforme du bâtiment (règle de pose 5 m). */
+  platformDisplacement(defId: string, gridX: number, gridY: number): number;
   /** Affiche / retire la surbrillance verte du ponton sur les tuiles données (mode placement). */
   setPortPreview(positions: { x: number; z: number }[]): void;
   setGroundPreview(positions: { x: number; z: number }[], tileW?: number, tileH?: number, buildingId?: string): void;

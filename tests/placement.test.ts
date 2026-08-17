@@ -24,6 +24,7 @@ function makeEngine(): GameEngine {
     renderWorld: () => {},
     setPortPreview: () => {},
     setGroundPreview: () => {},
+    platformDisplacement: () => 0,
   };
   const engine = new GameEngine(
     rendererStub as never, null as never, null as never, null as never,

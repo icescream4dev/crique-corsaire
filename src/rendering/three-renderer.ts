@@ -1249,6 +1249,42 @@ export class ThreeRenderer implements IRenderer {
     return top + (bot - top) * tz;
   }
 
+  /** Déplacement vertical maximal (en u) qu'imposerait la plateforme du
+   * bâtiment sur les sommets de son empreinte — règle de pose (Julien) :
+   * si un point doit être modifié de plus de 5 m (0,5 u), la pose est refusée.
+   * Simule le même calcul que buildTerrain : moyenne des sommets lissés,
+   * clamp [minPlatformHeight, maxPlatformHeight], pente 1 %. */
+  platformDisplacement(defId: string, gridX: number, gridY: number): number {
+    const entry = this.buildingModels.get(defId);
+    const fw = entry?.tileW ?? 1;
+    const fh = entry?.tileH ?? 1;
+    const g = (gx: number, gz: number): number =>
+      Number.isFinite(this.sampleGroundHeight(gx * TS, gz * TS)) ? this.sampleGroundHeight(gx * TS, gz * TS) : 0;
+    // 1. moyenne des sommets lissés de l'empreinte
+    let sumH = 0, nH = 0;
+    for (let gz = gridY; gz <= gridY + fh; gz++) {
+      for (let gx = gridX; gx <= gridX + fw; gx++) {
+        sumH += g(gx, gz);
+        nH++;
+      }
+    }
+    const meanH = sumH / nH;
+    // 2. garde-fou [min, max]
+    const minH = entry?.minPlatformHeight ?? 0.02;
+    const maxH = entry?.maxPlatformHeight ?? Infinity;
+    const hFlat = Math.min(Math.max(meanH, minH), maxH);
+    // 3. déplacement max = |hauteur finale (pente 1 %) − hauteur d'origine|
+    let maxDisp = 0;
+    for (let gz = gridY; gz <= gridY + fh; gz++) {
+      for (let gx = gridX; gx <= gridX + fw; gx++) {
+        const orig = g(gx, gz);
+        const target = hFlat + 0.01 * (orig - meanH);
+        maxDisp = Math.max(maxDisp, Math.abs(target - orig));
+      }
+    }
+    return maxDisp;
+  }
+
   // --- Surbrillance verte (mode placement) ---
 
   // --- Surbrillance verte (mode placement) : ghost = MODÈLE 3D cloné teinté ---
