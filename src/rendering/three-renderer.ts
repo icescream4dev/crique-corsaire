@@ -656,14 +656,32 @@ export class ThreeRenderer implements IRenderer {
     // l'empreinte avec une rampe douce sur les bords. Méthode (Julien) :
     //   1. hauteur plate = MOYENNE des SOMMETS LISSÉS de l'empreinte (pas la
     //      hauteur nominale du type de terrain — la pente réelle compte) ;
-    //   2. garde-fou : la plateforme ne descend JAMAIS sous minPlatformHeight
-    //      (paramètre par bâtiment : repaire 0.03 = 0,3 m, port −0.05 =
-    //      bas des poteaux) → jamais « les pieds dans l'eau » ni poteaux
-    //      suspendus au-dessus d'un fond trop profond ;
-    //   3. zone plane [gridX..gridX+fw]×[gridY..gridY+fh] à hFlat, rampe
-    //      courte (marge 1 tuile : mi-chemin, d>=2 inchangé), et la plateforme
-    //      conserve 1 % de la pente d'origine (astuce Julien) pour une
-    //      transition douce.
+    //   2. garde-fou : la plateforme reste dans [minPlatformHeight,
+    //      maxPlatformHeight] (paramètres par bâtiment). Le MIN est
+    //      PRIORITAIRE sur le max : un ponton posé adjacent à un bâtiment
+    //      terrestre ne doit pas abaisser son sol (voir étape 4) ;
+    //   3. zone plane + rampe courte (marge 1 tuile), la plateforme conserve
+    //      1 % de la pente d'origine (astuce Julien) pour une transition douce.
+    //   4. ⚠️ Un bâtiment ne peut JAMAIS abaisser un sommet qui appartient au
+    //      footprint d'un AUTRE bâtiment : la plateforme du ponton (max −0.005)
+    //      ne noie pas le repaire voisin (min 0.03). Le bâtiment terrestre, lui,
+    //      remonte toujours le sol quand on le pose (min prioritaire).
+    interface Footprint { gx0: number; gz0: number; gx1: number; gz1: number; }
+    const footprints: Footprint[] = [];
+    for (const row of tiles) {
+      for (const tile of row) {
+        const b = tile.buildings[0];
+        if (!b) continue;
+        if (tile.x !== b.gridX || tile.y !== b.gridY) continue;
+        const entry = this.buildingModels.get(b.defId);
+        const fw = entry?.tileW ?? 1;
+        const fh = entry?.tileH ?? 1;
+        footprints.push({ gx0: b.gridX, gz0: b.gridY, gx1: b.gridX + fw, gz1: b.gridY + fh });
+      }
+    }
+    const inFootprint = (gx: number, gz: number, fp: Footprint): boolean =>
+      gx >= fp.gx0 && gx <= fp.gx1 && gz >= fp.gz0 && gz <= fp.gz1;
+
     for (const row of tiles) {
       for (const tile of row) {
         const b = tile.buildings[0];
@@ -672,6 +690,7 @@ export class ThreeRenderer implements IRenderer {
         const entry = this.buildingModels.get(b.defId);
         const fw = entry?.tileW ?? 1;
         const fh = entry?.tileH ?? 1;
+        const fp = footprints.find((f) => f.gx0 === b.gridX && f.gz0 === b.gridY);
         const g = (col: number, row: number): number => heightGrid[row]?.[col] ?? 0;
         // 1. moyenne des sommets lissés de l'empreinte (4 coins + intérieurs)
         let sumH = 0, nH = 0;
@@ -699,6 +718,22 @@ export class ThreeRenderer implements IRenderer {
         for (let gz = b.gridY - 1; gz <= b.gridY + fh + 1; gz++) {
           for (let gx = b.gridX - 1; gx <= b.gridX + fw + 1; gx++) {
             if (gz < 0 || gz > H || gx < 0 || gx > W) continue;
+            // 4. Sommet partagé avec un AUTRE bâtiment → règle MIN prioritaire :
+            //    on peut le REMONTER (le bâtiment terrestre remonte le sol),
+            //    jamais l'abaisser (le ponton ne noie pas son voisin).
+            const autre = footprints.some((f) => f !== fp && inFootprint(gx, gz, f));
+            if (autre) {
+              const courant = g(gx, gz);
+              const dMax = Math.max(
+                Math.max(b.gridX - gx, gx - (b.gridX + fw), 0),
+                Math.max(b.gridY - gz, gz - (b.gridY + fh), 0),
+              );
+              const tMax = dMax >= 2 ? 1 : dMax * 0.5;
+              const targetMax = hFlat + SLOPE * (courant - meanH);
+              const val = targetMax * (1 - tMax) + courant * tMax;
+              if (val > courant) heightGrid[gz][gx] = val;
+              continue;
+            }
             const orig = g(gx, gz);
             const d = Math.max(
               Math.max(b.gridX - gx, gx - (b.gridX + fw), 0),
