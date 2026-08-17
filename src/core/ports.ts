@@ -22,8 +22,9 @@ export interface IRenderer {
   /** Déplacement vertical max (u) qu'imposerait la plateforme du bâtiment (règle de pose 5 m). */
   platformDisplacement(defId: string, gridX: number, gridY: number): number;
   /** Affiche / retire la surbrillance verte du ponton sur les tuiles données (mode placement). */
-  setPortPreview(positions: { x: number; z: number }[]): void;
-  setGroundPreview(positions: { x: number; z: number }[], tileW?: number, tileH?: number, buildingId?: string): void;
+  setGhostPreview(buildingId: string | null, gridX: number, gridZ: number, ok: boolean): void;
+  /** Callback appelé à chaque pan/zoom (recalcul du ghost sous le curseur). */
+  setCameraChangeListener(fn: () => void): void;
 }
 
 /** Abstraction de la persistence (sauvegarde/chargement). */

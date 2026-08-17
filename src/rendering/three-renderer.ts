@@ -127,9 +127,9 @@ export class ThreeRenderer implements IRenderer {
   // Modèles 3D chargés via le registre /assets/registry.json (clé = id bâtiment)
   // + taille d'empreinte en tuiles (pour centrer sur le footprint multi-tuiles)
   private buildingModels = new Map<string, { group: THREE.Group; tileW: number; tileH: number; minPlatformHeight: number; maxPlatformHeight: number }>();
-  // Surbrillance verte des tuiles valides (mode placement) — port (eau) et sol.
-  private groundPreview: THREE.Group | null = null;
-  private portPreview: THREE.Group | null = null;
+  // Surbrillance du placement : UN SEUL ghost (modèle cloné teinté vert/rouge)
+  // positionné sous le curseur ou au centre de la carte.
+  private ghostPreview: THREE.Group | null = null;
 
   // World / camera state
   private ww = 0;
@@ -514,6 +514,9 @@ export class ThreeRenderer implements IRenderer {
       s.camera.bottom = this.camera.bottom - margin;
       (s.camera as THREE.OrthographicCamera).updateProjectionMatrix();
     }
+
+    // Notifier le moteur (pan/zoom) pour recalculer le ghost sous le curseur
+    this.onCameraChange?.();
   }
 
   // --- IRenderer: centerOnWorld ---
@@ -1285,81 +1288,46 @@ export class ThreeRenderer implements IRenderer {
     return maxDisp;
   }
 
-  // --- Surbrillance verte (mode placement) ---
+  // --- Ghost de placement UNIQUE (Julien) : un seul ghost sous le curseur /
+  // au centre de la carte, vert si la pose est autorisée, rouge sinon.
+  // Recalculé au pan/zoom via onCameraChange (callback déclenché dans updateCamera).
 
-  // --- Surbrillance verte (mode placement) : ghost = MODÈLE 3D cloné teinté ---
-  // Le ghost montre la VRAIE géométrie du bâtiment (fidèle à l'emplacement
-  // final). La géométrie est PARTAGÉE avec le modèle source (clone shallow),
-  // donc on ne la dispose jamais ici ; seul le matériau vert est jetable.
+  /** Callback appelé à chaque pan/zoom (pour recalculer la tuile sous le curseur). */
+  private onCameraChange: (() => void) | null = null;
 
-  setPortPreview(positions: { x: number; z: number }[]): void {
-    this.clearPreview(this.portPreview);
-    this.portPreview = null;
-    const entry = this.buildingModels.get('port');
-    if (!entry || !positions.length) return;
-    this.portPreview = this.buildGhostPreview(entry, positions, null);
-    this.scene.add(this.portPreview);
+  setCameraChangeListener(fn: () => void): void {
+    this.onCameraChange = fn;
   }
 
-  setGroundPreview(positions: { x: number; z: number }[], tileW = 1, tileH = 1,
-                   buildingId?: string): void {
-    this.clearPreview(this.groundPreview);
-    this.groundPreview = null;
-    const entry = buildingId ? this.buildingModels.get(buildingId) : undefined;
-    if (!entry || !positions.length) {
-      // Pas de modèle : simple quad vert couvrant l'empreinte (secours).
-      if (positions.length) this.groundPreview = this.buildQuadPreview(positions, tileW, tileH);
-      if (this.groundPreview) this.scene.add(this.groundPreview);
-      return;
-    }
-    this.groundPreview = this.buildGhostPreview(entry, positions, (cx, cz) =>
-      (Number.isFinite(this.sampleGroundHeight(cx, cz)) ? this.sampleGroundHeight(cx, cz) : 0));
-    this.scene.add(this.groundPreview);
-  }
-
-  // Ghost 3D teinté vert : un clone du modèle par position valide.
-  // liftY : renvoie la hauteur du sol (null = laisser la transform du meta).
-  private buildGhostPreview(entry: { group: THREE.Group; tileW: number; tileH: number },
-                            positions: { x: number; z: number }[],
-                            liftY: ((cx: number, cz: number) => number) | null): THREE.Group {
+  /** Affiche le ghost du bâtiment à (gridX, gridZ), vert (ok) ou rouge (ko). */
+  setGhostPreview(buildingId: string | null, gridX: number, gridZ: number, ok: boolean): void {
+    this.clearPreview(this.ghostPreview);
+    this.ghostPreview = null;
+    if (!buildingId) return;
+    const entry = this.buildingModels.get(buildingId);
+    if (!entry) return;
+    const fcx = (gridX + entry.tileW / 2) * TS;
+    const fcz = (gridZ + entry.tileH / 2) * TS;
     const ghostMat = new THREE.MeshBasicMaterial({
-      color: 0x37f25c, transparent: true, opacity: 0.5, depthWrite: false,
+      color: ok ? 0x37f25c : 0xff3b30, transparent: true, opacity: 0.5, depthWrite: false,
     });
-    const group = new THREE.Group();
-    for (const p of positions) {
-      const fcx = (p.x + entry.tileW / 2) * TS;
-      const fcz = (p.z + entry.tileH / 2) * TS;
-      const inst = entry.group.clone();
-      inst.traverse((o) => { if (o instanceof THREE.Mesh) o.material = ghostMat; });
-      inst.position.x += fcx;
-      inst.position.z += fcz;
-      if (liftY) inst.position.y += liftY(fcx, fcz) + 0.02;
-      group.add(inst);
+    const inst = entry.group.clone();
+    inst.traverse((o) => { if (o instanceof THREE.Mesh) o.material = ghostMat; });
+    inst.position.x += fcx;
+    inst.position.z += fcz;
+    // Au sol : remonter sur la hauteur lissée ; pilotis : la transform du meta
+    // pose déjà la base (comme le bâtiment réel).
+    const defStilts = buildingId === 'port';
+    if (!defStilts) {
+      const gy = this.sampleGroundHeight(fcx, fcz);
+      inst.position.y += (Number.isFinite(gy) ? gy : 0) + 0.02;
     }
-    group.renderOrder = 2;
+    const group = new THREE.Group();
+    group.add(inst);
+    group.renderOrder = 2; // par-dessus le terrain
     group.userData.ghostMat = ghostMat;
-    return group;
-  }
-
-  // Quad vert de secours (bâtiment sans modèle 3D).
-  private buildQuadPreview(positions: { x: number; z: number }[], tileW: number, tileH: number): THREE.Group {
-    const geo = new THREE.PlaneGeometry(tileW * TS, tileH * TS);
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x37f25c, transparent: true, opacity: 0.35, depthWrite: false,
-    });
-    const group = new THREE.Group();
-    for (const p of positions) {
-      const cx = (p.x + tileW / 2) * TS;
-      const cz = (p.z + tileH / 2) * TS;
-      const m = new THREE.Mesh(geo, mat);
-      m.rotation.x = -Math.PI / 2;
-      m.position.set(cx, 0.05, cz);
-      m.renderOrder = 2;
-      group.add(m);
-    }
-    group.renderOrder = 2;
-    group.userData.ownGeometry = true;
-    return group;
+    this.ghostPreview = group;
+    this.scene.add(group);
   }
 
   // Nettoie un groupe de preview : dispose le matériau ghost (jetable) et les
@@ -1397,7 +1365,7 @@ export class ThreeRenderer implements IRenderer {
     this.cloudShadowMesh = null;
     this.cloudMesh = null;
     this.orientationMarkers = null;
-    this.portPreview = null;
+    this.ghostPreview = null;
     this.heightGrid = [];
   }
 

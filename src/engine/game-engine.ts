@@ -104,38 +104,27 @@ export class GameEngine {
     this.updatePlacementPreview();
   }
 
-  /** Affiche le sprite en surbrillance verte sur les tuiles où la pose est valide. */
+  /** Affiche le ghost UNIQUE au centre de la carte (état initial / sélection). */
   private updatePlacementPreview(): void {
     const sel = this.selectedBuilding;
-    if (sel === 'port') {
-      const pos: { x: number; z: number }[] = [];
-      const tiles = this.state.island.tiles;
-      for (let y = 0; y < tiles.length; y++) {
-        for (let x = 0; x < tiles[y].length; x++) {
-          if (this.canPlace('port', x, y)) pos.push({ x, z: y });
-        }
-      }
-      this.renderer.setPortPreview(pos);
-      this.renderer.setGroundPreview([], 1, 1);
+    if (!sel) {
+      this.renderer.setGhostPreview(null, 0, 0, false);
       return;
     }
-    this.renderer.setPortPreview([]);
-    if (sel) {
-      // Bâtiment au sol (empreinte w×h) : quads verts couvrant le footprint.
-      const def = this.buildingDefs.find(d => d.id === sel);
-      const w = def?.tileWidth ?? 1;
-      const h = def?.tileHeight ?? 1;
-      const pos: { x: number; z: number }[] = [];
-      const tiles = this.state.island.tiles;
-      for (let y = 0; y < tiles.length; y++) {
-        for (let x = 0; x < tiles[y].length; x++) {
-          if (this.canPlace(sel, x, y)) pos.push({ x, z: y });
-        }
-      }
-      this.renderer.setGroundPreview(pos, w, h, sel);
-    } else {
-      this.renderer.setGroundPreview([], 1, 1);
-    }
+    const w = this.state.island.width;
+    const h = this.state.island.height;
+    const cx = Math.floor(w / 2);
+    const cz = Math.floor(h / 2);
+    this.renderer.setGhostPreview(sel, cx, cz, this.canPlace(sel, cx, cz));
+  }
+
+  /** Recalcule le ghost sous le curseur (mousemove, pan, zoom). */
+  updateGhostAt(screenX: number, screenY: number): void {
+    const sel = this.selectedBuilding;
+    if (!sel) return;
+    const tile = this.renderer.getTileAt(screenX, screenY);
+    if (!tile) return;
+    this.renderer.setGhostPreview(sel, tile.x, tile.y, this.canPlace(sel, tile.x, tile.y));
   }
 
   canPlace(defId: string, x: number, y: number): boolean {

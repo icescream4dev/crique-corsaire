@@ -40,6 +40,16 @@ async function main() {
           }
         }
       });
+
+      // Ghost unique : suit le curseur, recalculé au mousemove + pan/zoom
+      let lastMouse = { x: 0, y: 0 };
+      canvas.addEventListener('mousemove', (e: MouseEvent) => {
+        lastMouse = { x: e.clientX, y: e.clientY };
+        engine.updateGhostAt(e.clientX, e.clientY);
+      });
+      renderer.setCameraChangeListener(() => {
+        if (engine.selectedBuilding) engine.updateGhostAt(lastMouse.x, lastMouse.y);
+      });
     }
 
   (window as any).gameEngine = engine;

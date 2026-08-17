@@ -22,8 +22,8 @@ function makeEngine(): GameEngine {
     renderBuilding: () => {},
     clear: () => {},
     renderWorld: () => {},
-    setPortPreview: () => {},
-    setGroundPreview: () => {},
+    setGhostPreview: () => {},
+    setCameraChangeListener: () => {},
     platformDisplacement: () => 0,
   };
   const engine = new GameEngine(
