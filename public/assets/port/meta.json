@@ -4,8 +4,8 @@
   "render": "model3d",
   "tile_width": 1,
   "tile_height": 1,
-  "platform_min_height": -0.04,
-  "platform_max_height": -0.005,
+  "platform_min_height": -0.055,
+  "platform_max_height": -0.025,
   "transform": {
     "quaternion_xyzw": [
       0.0,
@@ -16,7 +16,7 @@
     "scale": 0.219781,
     "offset_xyz": [
       -0.142912,
-      0.121611,
+      0.1103,
       -0.095818
     ],
     "yaw_deg": 85.5,
