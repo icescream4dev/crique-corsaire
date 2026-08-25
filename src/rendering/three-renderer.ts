@@ -565,40 +565,63 @@ export class ThreeRenderer implements IRenderer {
       this.sunLight.position.copy(this.camTarget).add(offset);
       this.sunLight.target.position.copy(this.camTarget);
 
-      // Shadow map : on ne copie PAS les bounds de la caméra de rendu tels
-      // quels — les deux repères (vue dimétrique vs rayons du soleil) sont
-      // inclinés de ~46°, les coins du frustum dépassaient la shadow map →
-      // ombres coupées selon le pan. On projette les 8 COINS du frustum de
-      // rendu dans le repère de la lumière et on prend la bounding box.
-      // Marge SHADOW_EXTRA supplémentaire pour les OMBRES PORTÉES : un
-      // bloqueur (relief jusqu'à 5 u) peut être jusqu'à h/tan(élévation)
-      // ≈ 4,1 u HORS du frustum et projeter encore son ombre à l'écran —
-      // sans elle, l'ombre d'une montagne s'efface quand la montagne sort
-      // du frustum par le bas de l'écran (Julien 2026-08-25).
+      // Shadow map : couverture = intersection de (a) la box du SOL VISIBLE
+      // (les 4 coins du frustum projetés au sol y=0, dans le repère de la
+      // lumière) et (b) la box de la CARTE projetée. Pourquoi :
+      // - on projette les coins du frustum au sol (PAS les bounds de la
+      //   caméra copiés tels quels : les deux repères sont inclinés de ~46°,
+      //   les coins du frustum dépassaient la shadow map → ombres coupées
+      //   au pan) ;
+      // - on clampe à la carte : le bord haut de l'écran touche le sol à
+      //   ~100 u au zoom min, mais l'océan au-delà est VIDE (l'eau ne reçoit
+      //   AUCUNE ombre) → sans clamp la shadow map serait diluée → ombres
+      //   invisibles (bug v12.16 v1 : far 200 → box ~180 u ; v2 : sol complet
+      //   → 98-121 u → 17-19 px/u) ;
+      // - marge SHADOW_EXTRA : bloqueurs au-delà du frustum (ombre max d'un
+      //   pic de 5 u = h/tan(50,5°) ≈ 4,1 u) + hauteur des objets (~3,2 u).
       const SHADOW_EXTRA = 6; // u — couvre la longueur d'ombre max du relief
       const cam = this.camera;
       cam.updateMatrixWorld(true);
-      // Matrice de vue de la shadow camera = lookAt(position soleil, cible) —
-      // identique à ce que WebGLShadowMap applique à la shadow camera.
-      const lightView = new THREE.Matrix4().lookAt(
-        this.sunLight.position, this.sunLight.target.position, new THREE.Vector3(0, 1, 0)
-      );
-      const box = new THREE.Box3();
-      const v = new THREE.Vector3();
-      for (const x of [cam.left, cam.right]) {
-        for (const y of [cam.top, cam.bottom]) {
-          for (const z of [cam.near, cam.far]) {
-            v.set(x, y, z).applyMatrix4(cam.matrixWorld).applyMatrix4(lightView);
-            box.expandByPoint(v);
-          }
+      // Matrice de vue EXACTE de la shadow camera (repositionnée comme le
+      // fait WebGLShadowMap). ⚠️ Ne pas utiliser Matrix4().lookAt() seul :
+      // c'est une rotation pure sans la translation du soleil → box décalée
+      // → shadow map vide → AUCUNE ombre (bug v12.16 v1).
+      const sc = this.sunLight.shadow.camera as THREE.OrthographicCamera;
+      sc.position.copy(this.sunLight.position);
+      sc.lookAt(this.sunLight.target.position);
+      sc.updateMatrixWorld(true);
+      const lightView = sc.matrixWorldInverse;
+      const m = cam.matrixWorld.elements;
+      const right = new THREE.Vector3(m[0], m[1], m[2]);
+      const up = new THREE.Vector3(m[4], m[5], m[6]);
+      const rayDir = new THREE.Vector3().subVectors(this.camTarget, cam.position).normalize();
+      const boxSol = new THREE.Box3();
+      const p = new THREE.Vector3();
+      for (const sx of [cam.left, cam.right]) {
+        for (const sy of [cam.top, cam.bottom]) {
+          p.copy(cam.position).addScaledVector(right, sx).addScaledVector(up, sy);
+          const t = -p.y / rayDir.y; // intersection du rayon avec le sol y=0
+          p.addScaledVector(rayDir, t).applyMatrix4(lightView);
+          boxSol.expandByPoint(p);
         }
       }
-      const sc = this.sunLight.shadow.camera as THREE.OrthographicCamera;
-      sc.left = box.min.x - SHADOW_EXTRA;
-      sc.right = box.max.x + SHADOW_EXTRA;
-      sc.top = box.max.y + SHADOW_EXTRA;
-      sc.bottom = box.min.y - SHADOW_EXTRA;
-      sc.updateProjectionMatrix();
+      const boxCarte = new THREE.Box3();
+      const worldW = this.ww * TS;
+      const worldH = this.wh * TS;
+      for (const wx of [0, worldW]) {
+        for (const wz of [0, worldH]) {
+          p.set(wx, 0, wz).applyMatrix4(lightView);
+          boxCarte.expandByPoint(p);
+        }
+      }
+      const box = boxSol.intersect(boxCarte);
+      if (!box.isEmpty()) {
+        sc.left = box.min.x - SHADOW_EXTRA;
+        sc.right = box.max.x + SHADOW_EXTRA;
+        sc.top = box.max.y + SHADOW_EXTRA;
+        sc.bottom = box.min.y - SHADOW_EXTRA;
+        sc.updateProjectionMatrix();
+      }
     }
 
     // Notifier le moteur (pan/zoom) pour recalculer le ghost : souris → sous
