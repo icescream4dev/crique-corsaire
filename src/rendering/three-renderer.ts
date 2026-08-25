@@ -673,12 +673,7 @@ export class ThreeRenderer implements IRenderer {
         //   frontière entre 2 types : bord net aligné sur la grille (50/50) ;
         //   coin de 4 types : angle propre (25/25/25/25), diagonale nette (pas d'escalier).
         const n = around.length;
-        // DEBUG (Julien) : jaune fluo sur les tuiles portant un bâtiment —
-        // permet de voir exactement quelles tuiles sont occupées.
-        const debugYellow = around.some((t) => t.buildings.length > 0);
-        if (debugYellow) {
-          colorGrid[gy][gx] = [1.0, 0.92, 0.0];
-        } else if (n > 0) {
+        if (n > 0) {
           let r = 0, g = 0, b = 0;
           for (const t of around) {
             const c = C[t.terrain]!;
