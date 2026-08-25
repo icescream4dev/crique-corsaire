@@ -27,6 +27,13 @@ const C: Record<string, THREE.Color> = {
 
 const TARGET_W = 640;
 const TARGET_H = 360;
+// Zoom min 0.4 (au lieu de 0.15) : au-delà, le fond de frustum dépasse la
+// ligne du plan near au sol (x+z = cible + 73) → bande de fond bleu en bas du
+// viewport qui « coupe » l'eau (et les vaguelettes disparaissent). À 0.4
+// (halfH = 25), le fond de frustum reste AVANT le plan near → l'océan couvre
+// tout le bas de l'écran, quel que soit le pan. Julien 2026-08-25.
+const MIN_ZOOM = 0.4;
+
 // Distance caméra → cible. 45 (au lieu de 20) : avec 20, la caméra ne
 // planait qu'à 12,25 u au NE de la cible (hauteur 10 u) — son plan NEAR
 // (0,1) rasait la crête NE de la carte (x+z = 65) et coupait les reliefs
@@ -100,10 +107,9 @@ const CLOUD_HEIGHT = 7.0; // hauteur nuage en unités monde (70 m, au-dessus des
 const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT); // (-1.2, +0.3)
 // L'eau, l'ombre et les nuages sont étendus au-delà de la carte (l'océan continue),
 // sinon leur bord rectiligne est visible quand on panne/dézoome vers le bord du monde.
-// ×30 (au lieu de ×4) : au zoom minimal (camZoom 0.15) le frustum couvre ±150 u autour
-// de la cible — le plan doit dépasser ça, sinon le fond bleu (background) apparaît en
-// bas de l'écran sur mobile (bug « rectangle bleu » au dézoom). 2 triangles pour l'eau,
-// coût nul.
+// ×30 : le frustum couvre ±100 u autour de la cible au zoom minimal (MIN_ZOOM 0.4) —
+// le plan doit dépasser ça (le fond bleu en bas venait du plan NEAR de la caméra, pas
+// du bord de l'eau — voir CAM_DIST/MIN_ZOOM). 2 triangles pour l'eau, coût nul.
 const WORLD_EXTEND = 30;
 
 // Transform d'un bâtiment 3D, au format meta.json produit par
@@ -379,7 +385,7 @@ export class ThreeRenderer implements IRenderer {
     c.addEventListener('wheel', (e: WheelEvent) => {
       e.preventDefault();
       this.camZoom *= e.deltaY > 0 ? 1.12 : 0.89;
-      this.camZoom = Math.max(0.15, Math.min(48, this.camZoom));
+      this.camZoom = Math.max(MIN_ZOOM, Math.min(48, this.camZoom));
       this.updateCamera();
     }, { passive: false });
 
@@ -469,7 +475,7 @@ export class ThreeRenderer implements IRenderer {
           const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
           const before = this.screenToGround(mx, my);
 
-          const newZoom = Math.max(0.15, Math.min(48, this.pinchZoom * (d / this.pinchDist)));
+          const newZoom = Math.max(MIN_ZOOM, Math.min(48, this.pinchZoom * (d / this.pinchDist)));
           this.camZoom = newZoom;
           this.updateCamera();
 
@@ -495,13 +501,28 @@ export class ThreeRenderer implements IRenderer {
     window.addEventListener('resize', () => this.onResize());
   }
 
-  // Borne le pan : la cible caméra reste DANS la carte (le point visé est
-  // toujours sur l'île → au minimum un bout d'île reste visible, quel que
-  // soit le zoom). Julien 2026-08-25.
+  // Borne le pan : la cible caméra reste dans le RECTANGLE projeté de la carte
+  // en repère ÉCRAN (axes caméra projetés sur XZ, orthonormés) :
+  //   u = (x − z)/√2  → axe droite-écran ; v = −(x + z)/√2 → axe haut-écran.
+  // Clamper en repère monde (x/z) faisait glisser le pan en DIAGONALE le long
+  // des bornes (un bord monde est une diagonale à l'écran) ; en repère écran,
+  // la limite est un rectangle orthogonal à l'écran → le pan s'arrête net sur
+  // les bords de la carte, sans glissement. La cible reste dans le losange
+  // projeté de la carte → au minimum un bout d'île toujours visible.
+  // Julien 2026-08-25.
   private clampCameraTarget(): void {
     if (this.ww <= 0 || this.wh <= 0) return;
-    this.camTarget.x = Math.max(0, Math.min(this.ww * TS, this.camTarget.x));
-    this.camTarget.z = Math.max(0, Math.min(this.wh * TS, this.camTarget.z));
+    const s = Math.SQRT1_2;
+    const u = s * (this.camTarget.x - this.camTarget.z);
+    const v = -s * (this.camTarget.x + this.camTarget.z);
+    const uMin = -s * (this.wh * TS);                  // x−z min de la carte
+    const uMax = s * (this.ww * TS);                   // x−z max
+    const vMin = -s * ((this.ww + this.wh) * TS);      // x+z max
+    const vMax = 0;                                    // x+z min
+    const uc = Math.max(uMin, Math.min(uMax, u));
+    const vc = Math.max(vMin, Math.min(vMax, v));
+    this.camTarget.x = (uc - vc) / (2 * s);
+    this.camTarget.z = -(uc + vc) / (2 * s);
   }
 
   private updateCamera() {
