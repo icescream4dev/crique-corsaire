@@ -103,7 +103,14 @@ const CLOUD_NOISE_GLSL = /* glsl */ `
 
 // Géométrie lumière/caméra — voir design/reference-lumiere-ombres-reflets.md
 const CLOUD_HEIGHT = 7.0; // hauteur nuage en unités monde (70 m, au-dessus des montagnes à 50 m)
-const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT); // (-1.2, +0.3)
+// Décalage de l'ombre des nuages au sol, dans la direction des ombres du MONDE :
+// les rayons du soleil (position camTarget+(40,50,-10)) se propagent vers
+// (-0,970, +0,243) horizontalement (SE, ratio 4:1) → pour h unités de hauteur,
+// l'ombre avance de h·(0,8, -0,2) — le nuage bloquant est au NO du point
+// d'ombre, donc le plan échantillonne le motif à (sol + 0,8h, sol − 0,2h).
+// ⚠️ Sens vérifié 2026-08-25 : l'ancienne valeur (-0,8, +0,2) décalait l'ombre
+// vers le NO — OPPOSÉ aux ombres du monde (Julien : « pas dans le même sens »).
+const SHADOW_OFFSET = new THREE.Vector2(0.8, -0.2).multiplyScalar(CLOUD_HEIGHT); // (+5,6, −1,4)
 // L'eau, l'ombre et les nuages sont étendus au-delà de la carte (l'océan continue),
 // sinon leur bord rectiligne est visible quand on panne/dézoome vers le bord du monde.
 // ×30 : le frustum couvre ±100 u autour de la cible au zoom minimal (MIN_ZOOM 0.4) —
