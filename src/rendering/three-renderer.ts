@@ -1060,17 +1060,6 @@ export class ThreeRenderer implements IRenderer {
           // Seuillage très strict
           float fleckMask = step(0.75, noiseVal);
 
-          // Autorisé dès la fin de l'écume (0,01) : les petites vaguelettes de
-          // surface doivent être visibles PARTOUT en mer (Julien 2026-08-25).
-          float openSeaMask = step(0.01, waterDepth);
-
-          // Palette shift : couleur CLAIRE (éclat de surface) → contraste
-          // garanti sur TOUTE la gamme d'eau. L'ancien mix vers midColor était
-          // INVISIBLE quand l'eau ≈ midColor (eaux côtières intermédiaires,
-          // waterDepth 0,1-0,4) → grandes zones sans vaguelettes, ligne de
-          // rupture suivant les contours de profondeur.
-          color = mix(color, vec3(0.85, 0.93, 0.98), fleckMask * openSeaMask * 0.5);
-
           // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
           
           // Reflet nuages : world-space fixe (pas de re-mapping vers la caméra).
@@ -1096,6 +1085,14 @@ export class ThreeRenderer implements IRenderer {
             }
             color = hsv2rgb(hsv);
           }
+
+          // Petites vaguelettes de surface, appliquées EN DERNIER (après le
+          // reflet) en couleur claire → visibles sur CHAQUE pixel d'eau, en
+          // pleine mer comme au large, SANS dépendre de la profondeur
+          // échantillonnée (l'ancien openSeaMask par waterDepth supprimait les
+          // vaguelettes au-delà du bord de la carte — « bornées à un rectangle
+          // plus petit que la map », Julien 2026-08-25).
+          color = mix(color, vec3(0.85, 0.93, 0.98), fleckMask * 0.5);
 
           gl_FragColor = vec4(color, 1.0);
         }`,
