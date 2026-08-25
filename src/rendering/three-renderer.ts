@@ -1050,7 +1050,13 @@ export class ThreeRenderer implements IRenderer {
           // L'étirement directionnel (*9, *45) conserve l'aspect "stries fines"
           // validé en v10.3 -> hybride iso + stries.
           vec2 iso = vec2(vWorldPos.x - vWorldPos.z, (vWorldPos.x + vWorldPos.z) * 0.5);
-          vec2 waveUV = iso * vec2(9.0, 45.0);
+          // Coordonnées du bruit ANCRÉES au centre de la carte : le hash
+          // (sin de grandes valeurs) perd sa précision sur GPU mobile au-delà
+          // d'un seuil → les vaguelettes disparaissaient en pleine mer (elles
+          // s'arrêtaient au repère nord, x+z≈54,5 → waveUV.y≈1226 — Julien
+          // 2026-08-25). Centre iso de la carte 80×50 (40×25 u) : (7.5, 16.25).
+          vec2 isoCentered = iso - vec2(7.5, 16.25);
+          vec2 waveUV = isoCentered * vec2(9.0, 45.0);
 
           // Double couche défilante à vitesses différentes
           float n1 = voronoi(waveUV + vec2(retroTime * 0.005, retroTime * 0.003));
