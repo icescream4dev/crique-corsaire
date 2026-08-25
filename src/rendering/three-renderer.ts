@@ -34,15 +34,16 @@ const TARGET_H = 360;
 // tout le bas de l'écran, quel que soit le pan. Julien 2026-08-25.
 const MIN_ZOOM = 0.4;
 
-// Distance caméra → cible. 45 (au lieu de 20) : avec 20, la caméra ne
-// planait qu'à 12,25 u au NE de la cible (hauteur 10 u) — son plan NEAR
-// (0,1) rasait la crête NE de la carte (x+z = 65) et coupait les reliefs
-// (« la zone bleue coupe les objets 3D ») ; au dézoom, la région derrière
-// le plan near affichait le fond bleu en bas de l'écran. À 45, la caméra
-// est à 27,5 u (hauteur 22,5) : le plan near passe 2,6 u AU-DESSUS du pic
-// le plus haut même quand la cible est au coin SO de la carte → plus aucun
-// relief coupé, la carte reste centrée à l'écran.
-const CAM_DIST = 45;
+// Distance caméra → cible. 55 (au lieu de 45) : au dézoom max, le bas du
+// viewport montre le sol jusqu'à x+z ≈ cible+71 — les NUAGES (y=7) et leurs
+// OMBRES (y=5,2) y passaient derrière le plan near (profondeur −1,86/−0,96 →
+// clippés, « bande en bas qui efface les nuages et leurs ombres, mais pas
+// leurs reflets » — Julien) car la caméra (hauteur 22,5) était trop basse par
+// rapport à la couche de nuages. À 55 (hauteur 27,5) : profondeur du nuage au
+// bas du zoom min = 0,5·(27,5−7) − 9,61 = 0,64 > 0,1 → plus de bande. Le plan
+// near passe 12,6 u AU-DESSUS du pic le plus haut (0,999·55−42,3) → relief
+// jamais coupé, carte centrée.
+const CAM_DIST = 55;
 
 // Fonctions de bruit GLSL partagées entre le water shader (reflet) et le plan
 // d'ombre nuage. Extraites pour garantir que reflet et ombre utilisent les MÊMES nuages.
@@ -184,7 +185,7 @@ export class ThreeRenderer implements IRenderer {
     // Scene principale
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a5276);
-    this.scene.fog = new THREE.Fog(0x1a5276, 90, 200); // la carte est à 25-85 u de la caméra (CAM_DIST 45) → jamais brumeuse, comme avant (start 40 avec CAM_DIST 20)
+    this.scene.fog = new THREE.Fog(0x1a5276, 100, 200); // la carte est à 30-95 u de la caméra (CAM_DIST 55) → jamais brumeuse
 
     // Caméra isométrique
     const aspect = container.clientWidth / container.clientHeight;
