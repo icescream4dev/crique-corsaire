@@ -27,7 +27,15 @@ const C: Record<string, THREE.Color> = {
 
 const TARGET_W = 640;
 const TARGET_H = 360;
-const CAM_DIST = 20;
+// Distance caméra → cible. 45 (au lieu de 20) : avec 20, la caméra ne
+// planait qu'à 12,25 u au NE de la cible (hauteur 10 u) — son plan NEAR
+// (0,1) rasait la crête NE de la carte (x+z = 65) et coupait les reliefs
+// (« la zone bleue coupe les objets 3D ») ; au dézoom, la région derrière
+// le plan near affichait le fond bleu en bas de l'écran. À 45, la caméra
+// est à 27,5 u (hauteur 22,5) : le plan near passe 2,6 u AU-DESSUS du pic
+// le plus haut même quand la cible est au coin SO de la carte → plus aucun
+// relief coupé, la carte reste centrée à l'écran.
+const CAM_DIST = 45;
 
 // Fonctions de bruit GLSL partagées entre le water shader (reflet) et le plan
 // d'ombre nuage. Extraites pour garantir que reflet et ombre utilisent les MÊMES nuages.
@@ -170,7 +178,7 @@ export class ThreeRenderer implements IRenderer {
     // Scene principale
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a5276);
-    this.scene.fog = new THREE.Fog(0x1a5276, 40, 100);
+    this.scene.fog = new THREE.Fog(0x1a5276, 90, 200); // la carte est à 25-85 u de la caméra (CAM_DIST 45) → jamais brumeuse, comme avant (start 40 avec CAM_DIST 20)
 
     // Caméra isométrique
     const aspect = container.clientWidth / container.clientHeight;
@@ -487,7 +495,17 @@ export class ThreeRenderer implements IRenderer {
     window.addEventListener('resize', () => this.onResize());
   }
 
+  // Borne le pan : la cible caméra reste DANS la carte (le point visé est
+  // toujours sur l'île → au minimum un bout d'île reste visible, quel que
+  // soit le zoom). Julien 2026-08-25.
+  private clampCameraTarget(): void {
+    if (this.ww <= 0 || this.wh <= 0) return;
+    this.camTarget.x = Math.max(0, Math.min(this.ww * TS, this.camTarget.x));
+    this.camTarget.z = Math.max(0, Math.min(this.wh * TS, this.camTarget.z));
+  }
+
   private updateCamera() {
+    this.clampCameraTarget();
     const aspect = this.ct.clientWidth / this.ct.clientHeight;
     const halfH = 10 / this.camZoom;
     this.camera.left = -halfH * aspect;
