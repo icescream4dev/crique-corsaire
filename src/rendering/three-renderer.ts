@@ -524,7 +524,12 @@ export class ThreeRenderer implements IRenderer {
     this.camTarget.z = -(uc + vc) / (2 * s);
   }
 
-  private updateCamera() {
+  // notify = false pour les réglages SYSTÈME (centerOnWorld, setCameraState,
+  // onResize) : le listener sert au ghost et à la persistance de la caméra
+  // utilisateur — un cadrage interne ne doit NI déplacer le ghost NI écraser
+  // la caméra sauvée dans state.camera (sinon la restauration au chargement
+  // est écrasée par la valeur par défaut avant d'avoir pu s'appliquer).
+  private updateCamera(notify = true) {
     this.clampCameraTarget();
     const aspect = this.ct.clientWidth / this.ct.clientHeight;
     const halfH = 10 / this.camZoom;
@@ -571,8 +576,10 @@ export class ThreeRenderer implements IRenderer {
 
     // Notifier le moteur (pan/zoom) pour recalculer le ghost : souris → sous
     // le curseur ; touch → au centre de l'écran.
-    const p = this.pointerForCameraChange();
-    this.onCameraChange?.(p.x, p.y);
+    if (notify) {
+      const p = this.pointerForCameraChange();
+      this.onCameraChange?.(p.x, p.y);
+    }
   }
 
   // --- IRenderer: centerOnWorld ---
@@ -583,7 +590,7 @@ export class ThreeRenderer implements IRenderer {
     this.camTarget.set(w * TS / 2, 0, h * TS / 2);
     const worldH = h * TS;
     this.camZoom = 20 / (worldH * 1.3);
-    this.updateCamera();
+    this.updateCamera(false);
   }
 
   // --- IRenderer: persistance caméra ---
@@ -597,7 +604,7 @@ export class ThreeRenderer implements IRenderer {
     if (this.ww <= 0 || this.wh <= 0) return; // pas encore cadré : centerOnWorld fera foi
     this.camTarget.set(state.targetX, 0, state.targetZ);
     this.camZoom = Math.max(MIN_ZOOM, Math.min(48, state.zoom));
-    this.updateCamera();
+    this.updateCamera(false);
   }
 
   // --- IRenderer: update ---
@@ -1526,6 +1533,6 @@ export class ThreeRenderer implements IRenderer {
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
     this.sceneRT.setSize(w, h);
-    this.updateCamera();
+    this.updateCamera(false);
   }
 }
