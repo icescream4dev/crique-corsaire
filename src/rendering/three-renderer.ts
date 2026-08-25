@@ -92,7 +92,11 @@ const CLOUD_HEIGHT = 7.0; // hauteur nuage en unités monde (70 m, au-dessus des
 const SHADOW_OFFSET = new THREE.Vector2(-0.8, 0.2).multiplyScalar(CLOUD_HEIGHT); // (-1.2, +0.3)
 // L'eau, l'ombre et les nuages sont étendus au-delà de la carte (l'océan continue),
 // sinon leur bord rectiligne est visible quand on panne/dézoome vers le bord du monde.
-const WORLD_EXTEND = 4;
+// ×30 (au lieu de ×4) : au zoom minimal (camZoom 0.15) le frustum couvre ±150 u autour
+// de la cible — le plan doit dépasser ça, sinon le fond bleu (background) apparaît en
+// bas de l'écran sur mobile (bug « rectangle bleu » au dézoom). 2 triangles pour l'eau,
+// coût nul.
+const WORLD_EXTEND = 30;
 
 // Transform d'un bâtiment 3D, au format meta.json produit par
 // scripts/building-pipeline.py (voir aussi public/assets/<id>/meta.json).
@@ -555,14 +559,6 @@ export class ThreeRenderer implements IRenderer {
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
 
-    // Mettre à jour la shadow map du soleil pour l'ombre SUR l'eau (le rendu
-    // ci-dessus a généré la shadow map → on la passe au water shader).
-    if (this.waterMesh && this.sunLight.shadow.map) {
-      const wm = this.waterMesh.material as THREE.ShaderMaterial;
-      wm.uniforms.sunShadowMap.value = this.sunLight.shadow.map.texture;
-      wm.uniforms.sunShadowMatrix.value.copy(this.sunLight.shadow.matrix);
-    }
-
     // Étape 2 : rendre avec l'eau + ombre nuage + nuages + post-processing
     this.cloudTime += dt * 0.001;
     if (this.waterMesh) {
@@ -883,11 +879,6 @@ export class ThreeRenderer implements IRenderer {
         uFar: { value: this.camera.far },
         uCloudHeight: { value: CLOUD_HEIGHT },
         uCameraPos: { value: this.camera.position.clone() },
-        // Ombre du soleil projetée SUR l'eau : la shadow map du soleil +
-        // sa matrice (le ponton la bloque → ombre à la surface, réaliste).
-        sunShadowMap: { value: null as THREE.Texture | null },
-        sunShadowMatrix: { value: new THREE.Matrix4() },
-        sunShadowBias: { value: 0.002 },
       },
       vertexShader: /* glsl */ `
         varying vec3 vWorldPos;
@@ -926,9 +917,6 @@ export class ThreeRenderer implements IRenderer {
         uniform float uCloudHeight;
         uniform vec3 uCameraPos;
         uniform float time;
-        uniform sampler2D sunShadowMap;
-        uniform mat4 sunShadowMatrix;
-        uniform float sunShadowBias;
 
         varying vec3 vWorldPos;
         varying vec4 vScreenPos;
@@ -1038,34 +1026,6 @@ export class ThreeRenderer implements IRenderer {
 
           // Palette shift : remplacer par la couleur plus claire
           color = mix(color, midColor, fleckMask * openSeaMask * 0.6);
-
-          // Ombre du soleil SUR l'eau : projeter la position monde dans
-          // l'espace de la lumière et comparer à la shadow map. Le ponton
-          // (castShadow) bloque le soleil → ombre à la surface, comme un vrai
-          // ponton. L'ombre reste collée à la surface (jamais sous le sol)
-          // quelle que soit la profondeur du fond.
-          // PCF doux 3×3 : le bord de l'ombre est progressif → l'ondulation des
-          // vagues (vWorldPos.y) déplace visiblement l'ombre, et l'ombre des
-          // poteaux touche leur base à la surface (l'écume).
-          vec4 shC = sunShadowMatrix * vec4(vWorldPos, 1.0);
-          vec3 shNdc = shC.xyz / shC.w;
-          vec2 shUv = shNdc.xy * 0.5 + 0.5;
-          float inShadow = 0.0;
-          if (shUv.x >= 0.0 && shUv.x <= 1.0 && shUv.y >= 0.0 && shUv.y <= 1.0
-              && shNdc.z >= -1.0 && shNdc.z <= 1.0) {
-            float fragDepth = shNdc.z * 0.5 + 0.5;   // NDC → [0,1]
-            float texel = 1.0 / 2048.0;              // taille d'un texel de la shadow map
-            float shadowSum = 0.0;
-            for (int dy = -1; dy <= 1; dy++) {
-              for (int dx = -1; dx <= 1; dx++) {
-                float lightDepth = texture2D(sunShadowMap, shUv + vec2(float(dx), float(dy)) * texel).r;
-                shadowSum += step(fragDepth - sunShadowBias, lightDepth);
-              }
-            }
-            inShadow = shadowSum / 9.0;
-          }
-          // Assombrir la surface de l'eau dans l'ombre (doucement, progressif)
-          color *= 1.0 - inShadow * 0.45;
 
           // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
           
