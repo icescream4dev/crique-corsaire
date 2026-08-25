@@ -34,16 +34,14 @@ const TARGET_H = 360;
 // tout le bas de l'écran, quel que soit le pan. Julien 2026-08-25.
 const MIN_ZOOM = 0.4;
 
-// Distance caméra → cible. 55 (au lieu de 45) : au dézoom max, le bas du
-// viewport montre le sol jusqu'à x+z ≈ cible+71 — les NUAGES (y=7) et leurs
-// OMBRES (y=5,2) y passaient derrière le plan near (profondeur −1,86/−0,96 →
-// clippés, « bande en bas qui efface les nuages et leurs ombres, mais pas
-// leurs reflets » — Julien) car la caméra (hauteur 22,5) était trop basse par
-// rapport à la couche de nuages. À 55 (hauteur 27,5) : profondeur du nuage au
-// bas du zoom min = 0,5·(27,5−7) − 9,61 = 0,64 > 0,1 → plus de bande. Le plan
-// near passe 12,6 u AU-DESSUS du pic le plus haut (0,999·55−42,3) → relief
-// jamais coupé, carte centrée.
-const CAM_DIST = 55;
+// Distance caméra → cible. 58 (au lieu de 55) : au dézoom max (halfH=25), le
+// rayon du bas du viewport croise le plan des nuages (y=7) derrière la caméra
+// tant que halfH > 1,155·(hauteur−7) → bande en bas qui efface les nuages et
+// leurs ombres (mais pas leurs reflets, dans l'eau). À 55 (hauteur 27,5) :
+// 25 > 23,67 → petite bande restante. À 58 (hauteur 29) : profondeur du nuage
+// au bas du zoom min = 2·(29−7) − 1,732·25 = 0,7 > 0,1 → PLUS DE BANDE.
+// Le plan near passe 15,6 u AU-DESSUS du pic le plus haut (0,999·58−42,3).
+const CAM_DIST = 58;
 
 // Fonctions de bruit GLSL partagées entre le water shader (reflet) et le plan
 // d'ombre nuage. Extraites pour garantir que reflet et ombre utilisent les MÊMES nuages.
@@ -185,7 +183,7 @@ export class ThreeRenderer implements IRenderer {
     // Scene principale
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a5276);
-    this.scene.fog = new THREE.Fog(0x1a5276, 100, 200); // la carte est à 30-95 u de la caméra (CAM_DIST 55) → jamais brumeuse
+    this.scene.fog = new THREE.Fog(0x1a5276, 105, 210); // la carte est à 30-98 u de la caméra (CAM_DIST 58) → jamais brumeuse
 
     // Caméra isométrique
     const aspect = container.clientWidth / container.clientHeight;
