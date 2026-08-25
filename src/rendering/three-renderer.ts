@@ -967,7 +967,11 @@ export class ThreeRenderer implements IRenderer {
 
         // Hash pour Voronoï
         float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+          // Argument du sin BORNÉ à [0, 2π] : le sin d'une grande valeur perd sa
+          // précision sur GPU mobile au-delà d'un seuil (~200k) → les vaguelettes
+          // disparaissaient en pleine mer (Julien 2026-08-25). Le mod 2π rend le
+          // hash précis à N'IMPORTE quelle coordonnée, sans duplication du motif.
+          return fract(sin(mod(dot(p, vec2(127.1, 311.7)), 6.28318530718)) * 43758.5453);
         }
 
         // Voronoï simplifié : distance au point le plus proche dans une grille 3×3
@@ -1050,13 +1054,7 @@ export class ThreeRenderer implements IRenderer {
           // L'étirement directionnel (*9, *45) conserve l'aspect "stries fines"
           // validé en v10.3 -> hybride iso + stries.
           vec2 iso = vec2(vWorldPos.x - vWorldPos.z, (vWorldPos.x + vWorldPos.z) * 0.5);
-          // Coordonnées du bruit ANCRÉES au centre de la carte : le hash
-          // (sin de grandes valeurs) perd sa précision sur GPU mobile au-delà
-          // d'un seuil → les vaguelettes disparaissaient en pleine mer (elles
-          // s'arrêtaient au repère nord, x+z≈54,5 → waveUV.y≈1226 — Julien
-          // 2026-08-25). Centre iso de la carte 80×50 (40×25 u) : (7.5, 16.25).
-          vec2 isoCentered = iso - vec2(7.5, 16.25);
-          vec2 waveUV = isoCentered * vec2(9.0, 45.0);
+          vec2 waveUV = iso * vec2(9.0, 45.0);
 
           // Double couche défilante à vitesses différentes
           float n1 = voronoi(waveUV + vec2(retroTime * 0.005, retroTime * 0.003));
