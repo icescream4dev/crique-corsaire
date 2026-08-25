@@ -1060,6 +1060,12 @@ export class ThreeRenderer implements IRenderer {
           // Seuillage très strict
           float fleckMask = step(0.75, noiseVal);
 
+          // Autorisé dès 15 cm (après l'écume qui s'arrête à 6 cm)
+          float openSeaMask = step(0.15, waterDepth);
+
+          // Palette shift : remplacer par la couleur plus claire
+          color = mix(color, midColor, fleckMask * openSeaMask * 0.6);
+
           // Ombres nuages appliquées APRÈS l'eau (pour être visibles)
           
           // Reflet nuages : world-space fixe (pas de re-mapping vers la caméra).
@@ -1085,15 +1091,6 @@ export class ThreeRenderer implements IRenderer {
             }
             color = hsv2rgb(hsv);
           }
-
-          // Petites vaguelettes de surface, appliquées EN DERNIER (après le
-          // reflet) en couleur claire. Masque par l'ÉCUME (1-foam) : la
-          // profondeur ne sert qu'à l'écume de bord (Julien) — les vaguelettes
-          // sont présentes PARTOUT ailleurs, sans dépendre de la valeur exacte
-          // de la profondeur échantillonnée au-delà de la carte (qui bornait
-          // les vaguelettes à ~90 % de la map).
-          float openSeaMask = 1.0 - foam;
-          color = mix(color, vec3(0.85, 0.93, 0.98), fleckMask * openSeaMask * 0.5);
 
           gl_FragColor = vec4(color, 1.0);
         }`,
