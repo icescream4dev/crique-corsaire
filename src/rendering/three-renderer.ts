@@ -1087,12 +1087,14 @@ export class ThreeRenderer implements IRenderer {
           }
 
           // Petites vaguelettes de surface, appliquées EN DERNIER (après le
-          // reflet) en couleur claire → visibles sur CHAQUE pixel d'eau, en
-          // pleine mer comme au large, SANS dépendre de la profondeur
-          // échantillonnée (l'ancien openSeaMask par waterDepth supprimait les
-          // vaguelettes au-delà du bord de la carte — « bornées à un rectangle
-          // plus petit que la map », Julien 2026-08-25).
-          color = mix(color, vec3(0.85, 0.93, 0.98), fleckMask * 0.5);
+          // reflet) en couleur claire. Masque par profondeur : PAS dans
+          // l'écume de bord (la profondeur est une donnée utile — Julien
+          // 2026-08-25), mais PARTOUT ailleurs — y compris en pleine mer
+          // au-delà de la carte, où la profondeur échantillonnée (depth buffer
+          // hors terrain) est négative/invalide : c'est elle qui bornait les
+          // vaguelettes à ~90 % de la map.
+          float openSeaMask = waterDepth < 0.0 ? 1.0 : step(0.05, waterDepth);
+          color = mix(color, vec3(0.85, 0.93, 0.98), fleckMask * openSeaMask * 0.5);
 
           gl_FragColor = vec4(color, 1.0);
         }`,
