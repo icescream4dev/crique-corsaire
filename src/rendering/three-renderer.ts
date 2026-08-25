@@ -565,13 +565,40 @@ export class ThreeRenderer implements IRenderer {
       this.sunLight.position.copy(this.camTarget).add(offset);
       this.sunLight.target.position.copy(this.camTarget);
 
-      const s = this.sunLight.shadow;
-      const margin = 5;
-      s.camera.left = this.camera.left - margin;
-      s.camera.right = this.camera.right + margin;
-      s.camera.top = this.camera.top + margin;
-      s.camera.bottom = this.camera.bottom - margin;
-      (s.camera as THREE.OrthographicCamera).updateProjectionMatrix();
+      // Shadow map : on ne copie PAS les bounds de la caméra de rendu tels
+      // quels — les deux repères (vue dimétrique vs rayons du soleil) sont
+      // inclinés de ~46°, les coins du frustum dépassaient la shadow map →
+      // ombres coupées selon le pan. On projette les 8 COINS du frustum de
+      // rendu dans le repère de la lumière et on prend la bounding box.
+      // Marge SHADOW_EXTRA supplémentaire pour les OMBRES PORTÉES : un
+      // bloqueur (relief jusqu'à 5 u) peut être jusqu'à h/tan(élévation)
+      // ≈ 4,1 u HORS du frustum et projeter encore son ombre à l'écran —
+      // sans elle, l'ombre d'une montagne s'efface quand la montagne sort
+      // du frustum par le bas de l'écran (Julien 2026-08-25).
+      const SHADOW_EXTRA = 6; // u — couvre la longueur d'ombre max du relief
+      const cam = this.camera;
+      cam.updateMatrixWorld(true);
+      // Matrice de vue de la shadow camera = lookAt(position soleil, cible) —
+      // identique à ce que WebGLShadowMap applique à la shadow camera.
+      const lightView = new THREE.Matrix4().lookAt(
+        this.sunLight.position, this.sunLight.target.position, new THREE.Vector3(0, 1, 0)
+      );
+      const box = new THREE.Box3();
+      const v = new THREE.Vector3();
+      for (const x of [cam.left, cam.right]) {
+        for (const y of [cam.top, cam.bottom]) {
+          for (const z of [cam.near, cam.far]) {
+            v.set(x, y, z).applyMatrix4(cam.matrixWorld).applyMatrix4(lightView);
+            box.expandByPoint(v);
+          }
+        }
+      }
+      const sc = this.sunLight.shadow.camera as THREE.OrthographicCamera;
+      sc.left = box.min.x - SHADOW_EXTRA;
+      sc.right = box.max.x + SHADOW_EXTRA;
+      sc.top = box.max.y + SHADOW_EXTRA;
+      sc.bottom = box.min.y - SHADOW_EXTRA;
+      sc.updateProjectionMatrix();
     }
 
     // Notifier le moteur (pan/zoom) pour recalculer le ghost : souris → sous
