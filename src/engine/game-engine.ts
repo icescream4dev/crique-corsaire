@@ -56,6 +56,10 @@ export class GameEngine {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         this.renderer.centerOnWorld(this.state.island.width, this.state.island.height);
+        // Restaurer la caméra sauvée (pan/zoom) APRÈS le cadrage par défaut,
+        // sinon centerOnWorld l'écraserait. Rien ne se passe si state.camera
+        // est absent (première visite → cadrage par défaut).
+        this.restoreCamera();
         this.buildWorld();
       });
     });
@@ -200,10 +204,37 @@ export class GameEngine {
     // fondation aplatie (flattening) sous le bâtiment au sol — un simple
     // renderBuilding() laisserait le terrain en pente sous le modèle.
     this.buildWorld();
+    // Persister immédiatement (les rechargements de page Chrome Android
+    // surviennent à tout moment — ne pas attendre le prochain pan/zoom).
+    void this.persistence.save(this.state);
     return instance;
   }
 
+  /** Sauvegarde l'état complet (bâtiments + île) — appelé aussi sur
+   *  pagehide/visibilitychange pour attraper le dernier état avant qu'un
+   *  rechargement de page ne détruise la session. */
   save(): Promise<void> { return this.persistence.save(this.state); }
+
+  /** Met à jour state.camera depuis le renderer et sauvegarde (débouncé) :
+   *  appelé à chaque pan/zoom, mais l'écriture IndexedDB n'a lieu qu'après
+   *  400 ms de silence pour ne pas marteler le disque pendant un drag. */
+  saveCamera(): void {
+    const cam = this.renderer.getCameraState();
+    if (cam) this.state.camera = cam;
+    if (this.cameraSaveTimer !== null) clearTimeout(this.cameraSaveTimer);
+    this.cameraSaveTimer = setTimeout(() => {
+      this.cameraSaveTimer = null;
+      void this.persistence.save(this.state);
+    }, 400);
+  }
+
+  /** Applique la caméra sauvée (target + zoom) après le cadrage par défaut. */
+  private restoreCamera(): void {
+    const cam = this.state.camera;
+    if (cam) this.renderer.setCameraState(cam);
+  }
+
+  private cameraSaveTimer: ReturnType<typeof setTimeout> | null = null;
   destroy(): void { this.running = false; this.events.clear(); }
 
   /** Régénère une nouvelle île (pour les tests). */
@@ -215,8 +246,11 @@ export class GameEngine {
     this.state.pirates = [];
     this.state.gems = 10;
     this.state.tick = 0;
+    this.state.camera = undefined; // nouveau monde → cadrage par défaut
     this.renderer.centerOnWorld(this.state.island.width, this.state.island.height);
     this.buildWorld();
+    // Persister : sinon un rechargement de page restaurerait l'ANCIENNE île.
+    void this.persistence.save(this.state);
   }
 
   private createEmptyState(): GameState {

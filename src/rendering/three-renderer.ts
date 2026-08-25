@@ -10,7 +10,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { IRenderer } from '../core/ports';
-import type { Tile, IslandData } from '../core/types';
+import type { Tile, IslandData, CameraState } from '../core/types';
 import { terrainHeight } from '../core/terrain';
 
 const TS = 0.5; // taille logique d'une tuile en unités monde (mètres)
@@ -583,6 +583,20 @@ export class ThreeRenderer implements IRenderer {
     this.camTarget.set(w * TS / 2, 0, h * TS / 2);
     const worldH = h * TS;
     this.camZoom = 20 / (worldH * 1.3);
+    this.updateCamera();
+  }
+
+  // --- IRenderer: persistance caméra ---
+
+  getCameraState(): CameraState | null {
+    if (this.ww <= 0 || this.wh <= 0) return null; // pas encore cadré
+    return { targetX: this.camTarget.x, targetZ: this.camTarget.z, zoom: this.camZoom };
+  }
+
+  setCameraState(state: CameraState): void {
+    if (this.ww <= 0 || this.wh <= 0) return; // pas encore cadré : centerOnWorld fera foi
+    this.camTarget.set(state.targetX, 0, state.targetZ);
+    this.camZoom = Math.max(MIN_ZOOM, Math.min(48, state.zoom));
     this.updateCamera();
   }
 

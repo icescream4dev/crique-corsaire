@@ -3,7 +3,7 @@
 // Le domaine ne dépend QUE de ces interfaces, jamais des adapters.
 // ============================================================
 
-import type { IslandData, GameState, BuildingDef, ResourceDef, PirateType, Tile } from './types';
+import type { IslandData, GameState, BuildingDef, ResourceDef, PirateType, Tile, CameraState } from './types';
 
 /** Abstraction du rendu. Le domaine appelle ces méthodes, l'adapter (Three.js ou PixiJS) les implémente. */
 export interface IRenderer {
@@ -27,6 +27,10 @@ export interface IRenderer {
   tileAtViewCenter(): { x: number; y: number } | null;
   /** Callback appelé à chaque pan/zoom (recalcul du ghost sous le curseur). */
   setCameraChangeListener(fn: (clientX: number, clientY: number) => void): void;
+  /** Position/zoom courants de la caméra (persistance). */
+  getCameraState(): CameraState | null;
+  /** Applique une position/zoom sauvés (clampé aux bornes actuelles). */
+  setCameraState(state: CameraState): void;
 }
 
 /** Abstraction de la persistence (sauvegarde/chargement). */

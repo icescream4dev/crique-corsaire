@@ -26,9 +26,17 @@ function makeEngine(): GameEngine {
     setCameraChangeListener: () => {},
     tileAtViewCenter: () => ({ x: 3, y: 3 }),
     platformDisplacement: () => 0,
+    getCameraState: () => null,
+    setCameraState: () => {},
+  };
+  const persistenceStub = {
+    save: async () => {},
+    load: async () => null,
+    listSaves: async () => [],
+    delete: async () => {},
   };
   const engine = new GameEngine(
-    rendererStub as never, null as never, null as never, null as never,
+    rendererStub as never, persistenceStub as never, null as never, null as never,
   );
   const hideoutDef: BuildingDef = {
     id: 'hideout', name: 'Repaire test', category: 'housing',

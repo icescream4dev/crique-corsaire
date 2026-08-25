@@ -49,8 +49,21 @@ async function main() {
       // et la passe au pan/zoom → le ghost suit même sans mouvement de souris.
       renderer.setCameraChangeListener((x, y) => {
         if (engine.selectedBuilding) engine.updateGhostAt(x, y);
+        // Persister la caméra à chaque pan/zoom (débouncé) : Chrome Android
+        // évince les onglets en arrière-plan et les recharge au retour de
+        // focus → sans ça, le point de vue est perdu à chaque rechargement.
+        engine.saveCamera();
       });
     }
+
+    // Sauvegarde de dernier recours : Chrome recharge la page quelques
+    // secondes APRÈS le retour de focus (tab eviction). pagehide et
+    // visibilitychange(hidden) attrapent l'état juste avant le rechargement.
+    const persistNow = () => { void engine.save(); };
+    window.addEventListener('pagehide', persistNow);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') persistNow();
+    });
 
   (window as any).gameEngine = engine;
 

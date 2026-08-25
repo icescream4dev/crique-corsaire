@@ -132,6 +132,14 @@ export interface Pirate {
 }
 
 // --- État global du jeu ---
+/** Position/zoom de la caméra iso, persistés pour survivre aux rechargements
+ *  de page (Chrome Android évince/recharge les onglets au retour de focus). */
+export interface CameraState {
+  targetX: number;
+  targetZ: number;
+  zoom: number;
+}
+
 export interface GameState {
   tick: number;
   island: IslandData;
@@ -141,6 +149,7 @@ export interface GameState {
   reputation: number;
   gems: number;            // pierres précieuses
   unlockedTech: string[];
+  camera?: CameraState;    // caméra au dernier pan/zoom (undefined = cadrage par défaut)
 }
 
 // --- Événements ---
